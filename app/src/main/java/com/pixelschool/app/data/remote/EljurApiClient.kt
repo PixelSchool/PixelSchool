@@ -1796,7 +1796,159 @@ class EljurApiClient(
         return ParsedPeriodData(marks, avgVal, finalVal)
     }
 
+    fun parseEljurGrid(doc: org.jsoup.nodes.Document): List<SubjectSummary> {
+        val fioDiv = doc.selectFirst("#g0_fio")
+        val marksDiv = doc.selectFirst("#g0_marks")
+        if (fioDiv == null && marksDiv == null) return emptyList()
+
+        val subjectNames = LinkedHashSet<String>()
+
+        // 1. Extract subject names from #g0_fio
+        if (fioDiv != null) {
+            val cellElements = fioDiv.select(".cell")
+            for (c in cellElements) {
+                val sName = c.attr("name").ifBlank { c.text() }.trim()
+                if (sName.isNotBlank() && sName.length >= 2 && sName != "Предмет" && sName != "ФИО" && sName != "№") {
+                    subjectNames.add(sName)
+                }
+            }
+        }
+
+        // 2. Extract JournalConfig from scripts (for subject names, pmark, and part)
+        var pagePart = "1"
+        val pmarksMap = mutableMapOf<String, String>()
+        for (script in doc.select("script")) {
+            val sHtml = script.html()
+            if (sHtml.contains("JournalConfig")) {
+                val match = Regex("""var\s+JournalConfig\s*=\s*(\{.+?\});""", RegexOption.DOT_MATCHES_ALL).find(sHtml)
+                if (match != null) {
+                    try {
+                        val jc = JSONObject(match.groupValues[1])
+                        val lessonsObj = jc.optJSONObject("lessons")
+                        if (lessonsObj != null) {
+                            for (k in lessonsObj.keys()) {
+                                val lName = lessonsObj.optString(k).trim()
+                                if (lName.isNotBlank()) subjectNames.add(lName)
+                            }
+                        }
+                        val pmarkObj = jc.optJSONObject("pmark")
+                        if (pmarkObj != null) {
+                            for (k in pmarkObj.keys()) {
+                                val pmVal = pmarkObj.optString(k).trim()
+                                if (pmVal.isNotBlank()) pmarksMap[k] = pmVal
+                            }
+                        }
+                        val rawPart = jc.optString("part").ifBlank { jc.optString("sp") }
+                        if (rawPart.isNotBlank()) {
+                            pagePart = rawPart
+                        }
+                    } catch (_: Exception) {}
+                }
+            }
+        }
+
+        val activeQuarterIdx = when {
+            Regex("""\b(1|i|1-я|1-й|перв)\b|1\s*ч""", RegexOption.IGNORE_CASE).containsMatchIn(pagePart) -> 0
+            Regex("""\b(2|ii|2-я|2-й|втор)\b|2\s*ч""", RegexOption.IGNORE_CASE).containsMatchIn(pagePart) -> 1
+            Regex("""\b(3|iii|3-я|3-й|трет)\b|3\s*ч""", RegexOption.IGNORE_CASE).containsMatchIn(pagePart) -> 2
+            Regex("""\b(4|iv|4-я|4-й|четв)\b|4\s*ч""", RegexOption.IGNORE_CASE).containsMatchIn(pagePart) -> 3
+            else -> 0
+        }
+
+        // 3. Extract all marks from #g0_marks
+        val marksBySubject = LinkedHashMap<String, MutableList<Mark>>()
+        if (marksDiv != null) {
+            val markCells = marksDiv.select(".cell")
+            for (cell in markCells) {
+                val subj = cell.attr("name").trim()
+                if (subj.isBlank()) continue
+                val rawDate = cell.attr("mark_date").trim()
+                val formattedDate = formatMarkDate(rawDate)
+                val topic = cell.attr("data-title").ifBlank { cell.attr("title") }.trim()
+
+                val cellData = cell.selectFirst(".cell-data")
+                val rawVal = cellData?.ownText()?.ifBlank { cellData.text() }?.trim() ?: ""
+                val cleanVal = rawVal.replace("&nbsp;", "").replace("\u00a0", "").trim()
+                if (cleanVal.isBlank()) continue
+
+                val isRequired = cell.attr("mt_required") == "1"
+                val weight = if (isRequired) 2 else (cell.attr("data-weight").toIntOrNull() ?: 1)
+                val isControl = isRequired || cell.hasClass("colorss1") || topic.contains("контроль", ignoreCase = true)
+
+                val targetList = marksBySubject.getOrPut(subj) { mutableListOf() }
+                if (cleanVal.contains("/")) {
+                    val parts = cleanVal.split("/")
+                    for (part in parts) {
+                        val pVal = part.trim()
+                        if (pVal.isNotEmpty()) {
+                            targetList.add(
+                                Mark(
+                                    value = pVal,
+                                    weight = weight,
+                                    date = formattedDate,
+                                    comment = topic.ifBlank { null },
+                                    isControl = isControl
+                                )
+                            )
+                        }
+                    }
+                } else {
+                    targetList.add(
+                        Mark(
+                            value = cleanVal,
+                            weight = weight,
+                            date = formattedDate,
+                            comment = topic.ifBlank { null },
+                            isControl = isControl
+                        )
+                    )
+                }
+            }
+        }
+
+        if (subjectNames.isEmpty() && marksBySubject.isEmpty()) return emptyList()
+
+        val allSubjectNames = LinkedHashSet<String>().apply {
+            addAll(subjectNames)
+            addAll(marksBySubject.keys)
+        }
+
+        val summaries = mutableListOf<SubjectSummary>()
+        for (subj in allSubjectNames) {
+            val marks = marksBySubject[subj] ?: emptyList()
+            val finalMark = pmarksMap[subj]?.ifBlank { null }
+            val periodMarks = groupMarksIntoPeriods(marks, finalMark, activeQuarterIdx)
+
+            val numericMarks = marks.filter { it.numericValue != null }
+            val totalWeight = numericMarks.sumOf { it.weight }
+            val yearlyAvg = if (totalWeight > 0) {
+                (numericMarks.sumOf { ((it.numericValue ?: 0f) * it.weight).toDouble() } / totalWeight).toFloat()
+            } else {
+                val nonZeroPeriods = periodMarks.map { it.average }.filter { it > 0f }
+                if (nonZeroPeriods.isNotEmpty()) nonZeroPeriods.average().toFloat() else 0f
+            }
+
+            summaries.add(
+                SubjectSummary(
+                    subject = subj,
+                    average = yearlyAvg,
+                    marks = marks,
+                    finalMark = finalMark,
+                    periodMarks = periodMarks
+                )
+            )
+        }
+
+        return summaries.sortedByDescending { it.average }
+    }
+
     private fun parseGradesHtml(doc: org.jsoup.nodes.Document): List<SubjectSummary> {
+        val eljurGridResult = parseEljurGrid(doc)
+        if (eljurGridResult.isNotEmpty()) {
+            Log.d(TAG, "Successfully parsed ${eljurGridResult.size} subjects from ElJur Grid")
+            return eljurGridResult
+        }
+
         val subjectMap = LinkedHashMap<String, SubjectSummary>()
         val tables = doc.select("table")
 
@@ -2483,7 +2635,11 @@ class EljurApiClient(
         return emptyList()
     }
 
-    fun groupMarksIntoPeriods(allMarks: List<Mark>, subjectFinalMark: String? = null): List<PeriodMarks> {
+    fun groupMarksIntoPeriods(
+        allMarks: List<Mark>,
+        subjectFinalMark: String? = null,
+        activeQuarterIdx: Int = 0
+    ): List<PeriodMarks> {
         val q1Marks = mutableListOf<Mark>()
         val q2Marks = mutableListOf<Mark>()
         val q3Marks = mutableListOf<Mark>()
@@ -2510,11 +2666,16 @@ class EljurApiClient(
             } else 0f
         }
 
+        val q1Final = if (activeQuarterIdx == 0) subjectFinalMark else null
+        val q2Final = if (activeQuarterIdx == 1) subjectFinalMark else null
+        val q3Final = if (activeQuarterIdx == 2) subjectFinalMark else null
+        val q4Final = if (activeQuarterIdx == 3) subjectFinalMark else null
+
         return listOf(
-            PeriodMarks("1", "1 четверть", q1Marks, calcAvg(q1Marks), null),
-            PeriodMarks("2", "2 четверть", q2Marks, calcAvg(q2Marks), null),
-            PeriodMarks("3", "3 четверть", q3Marks, calcAvg(q3Marks), null),
-            PeriodMarks("4", "4 четверть", q4Marks, calcAvg(q4Marks), subjectFinalMark)
+            PeriodMarks("1", "1 четверть", q1Marks, calcAvg(q1Marks), q1Final),
+            PeriodMarks("2", "2 четверть", q2Marks, calcAvg(q2Marks), q2Final),
+            PeriodMarks("3", "3 четверть", q3Marks, calcAvg(q3Marks), q3Final),
+            PeriodMarks("4", "4 четверть", q4Marks, calcAvg(q4Marks), q4Final ?: (if (activeQuarterIdx > 3) subjectFinalMark else null))
         )
     }
 
