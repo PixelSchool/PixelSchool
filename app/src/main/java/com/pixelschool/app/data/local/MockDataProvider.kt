@@ -1,5 +1,6 @@
 package com.pixelschool.app.data.local
 
+import com.pixelschool.app.data.model.AcademicPeriod
 import com.pixelschool.app.data.model.DaySchedule
 import com.pixelschool.app.data.model.Homework
 import com.pixelschool.app.data.model.Lesson
@@ -342,6 +343,15 @@ object MockDataProvider {
                     Mark("5", 1, "15.10")
                 )
             )
+        )
+    }
+
+    fun getAcademicPeriods(): List<AcademicPeriod> {
+        return listOf(
+            AcademicPeriod("1", "1 четверть", "20260901", "20261026", "20260901-20261026", isActive = true),
+            AcademicPeriod("2", "2 четверть", "20261105", "20261228", "20261105-20261228"),
+            AcademicPeriod("3", "3 четверть", "20270111", "20270322", "20270111-20270322"),
+            AcademicPeriod("4", "4 четверть", "20270401", "20270525", "20270401-20270525")
         )
     }
 }

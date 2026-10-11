@@ -1,6 +1,7 @@
 package com.pixelschool.app.data.remote
 
 import android.util.Log
+import com.pixelschool.app.data.model.AcademicPeriod
 import com.pixelschool.app.data.model.DaySchedule
 import com.pixelschool.app.data.model.Lesson
 import com.pixelschool.app.data.model.Mark
@@ -221,8 +222,15 @@ class EljurApiClient(
     }
 
     fun getCurrentWeekRange(date: Date = Date()): String {
+        return getWeekRangeForOffset(0, date)
+    }
+
+    fun getWeekRangeForOffset(weekOffset: Int = 0, baseDate: Date = Date()): String {
         val cal = Calendar.getInstance(Locale.getDefault())
-        cal.time = date
+        cal.time = baseDate
+        if (weekOffset != 0) {
+            cal.add(Calendar.WEEK_OF_YEAR, weekOffset)
+        }
         val dayOfWeek = cal.get(Calendar.DAY_OF_WEEK)
         val daysFromMonday = if (dayOfWeek == Calendar.SUNDAY) 6 else dayOfWeek - Calendar.MONDAY
         cal.add(Calendar.DAY_OF_MONTH, -daysFromMonday)
@@ -231,6 +239,16 @@ class EljurApiClient(
         cal.add(Calendar.DAY_OF_MONTH, 6)
         val end = sdf.format(cal.time)
         return "$start-$end"
+    }
+
+    fun formatWeekRangeDisplay(range: String): String {
+        val parts = range.split("-")
+        if (parts.size == 2 && parts[0].length == 8 && parts[1].length == 8) {
+            val d1 = "${parts[0].substring(6, 8)}.${parts[0].substring(4, 6)}"
+            val d2 = "${parts[1].substring(6, 8)}.${parts[1].substring(4, 6)}"
+            return "$d1 – $d2"
+        }
+        return range
     }
 
     private fun formatDisplayDate(raw: String): String {
@@ -268,28 +286,177 @@ class EljurApiClient(
 
     suspend fun fetchPeriods(
         token: String,
-        vendor: String
-    ): Result<JSONObject> = withContext(Dispatchers.IO) {
+        vendor: String,
+        studentId: String? = null
+    ): Result<List<AcademicPeriod>> = withContext(Dispatchers.IO) {
         try {
-            val vendorParam = if (vendor.isNotBlank()) "&vendor=$vendor" else ""
-            val url = "$baseUrl/apiv3/getperiods?devkey=$devKey&out_format=json&auth_token=$token$vendorParam&weeks=true&show_disabled=true"
-            val req = Request.Builder()
-                .url(url)
-                .header("User-Agent", browserUserAgent)
-                .build()
-            val resp = client.newCall(req).execute()
-            val body = resp.body?.string()
-            if (resp.isSuccessful && !body.isNullOrEmpty()) {
-                val json = JSONObject(body)
-                val respObj = json.optJSONObject("response") ?: json
-                if (respObj.optInt("state", 200) == 200) {
-                    return@withContext Result.success(respObj)
+            if (token.isNotBlank() && token != "web_session") {
+                val vendorParam = if (vendor.isNotBlank()) "&vendor=$vendor" else ""
+                val urls = mutableListOf<String>()
+                if (!studentId.isNullOrBlank()) {
+                    urls.add("$baseUrl/apiv3/getperiods?devkey=$devKey&out_format=json&auth_token=$token$vendorParam&weeks=true&show_disabled=true&student=$studentId")
+                }
+                urls.add("$baseUrl/apiv3/getperiods?devkey=$devKey&out_format=json&auth_token=$token$vendorParam&weeks=true&show_disabled=true")
+
+                for (url in urls) {
+                    try {
+                        val req = Request.Builder()
+                            .url(url)
+                            .header("User-Agent", browserUserAgent)
+                            .build()
+                        val resp = client.newCall(req).execute()
+                        val body = resp.body?.string()
+                        if (resp.isSuccessful && !body.isNullOrEmpty()) {
+                            val json = JSONObject(body)
+                            val respObj = json.optJSONObject("response") ?: json
+                            if (respObj.optInt("state", 200) == 200) {
+                                val periods = parsePeriodsJson(respObj, studentId)
+                                if (periods.isNotEmpty()) {
+                                    return@withContext Result.success(periods)
+                                }
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.w("EljurApiClient", "fetchPeriods error: ${e.message} for $url")
+                    }
                 }
             }
-            Result.failure(Exception("Не удалось получить учебные периоды"))
-        } catch (e: Exception) {
-            Result.failure(e)
+            Result.success(generateDefaultAcademicPeriods())
+        } catch (_: Exception) {
+            Result.success(generateDefaultAcademicPeriods())
         }
+    }
+
+    fun parsePeriodsJson(respObj: JSONObject, filterStudentId: String? = null): List<AcademicPeriod> {
+        val result = respObj.optJSONObject("result") ?: respObj
+
+        var studentObj: JSONObject? = null
+        val studentsObj = result.optJSONObject("students")
+        val studentsArr = result.optJSONArray("students")
+
+        if (studentsObj != null && studentsObj.length() > 0) {
+            if (!filterStudentId.isNullOrBlank() && studentsObj.has(filterStudentId)) {
+                studentObj = studentsObj.optJSONObject(filterStudentId)
+            }
+            if (studentObj == null) {
+                for (key in studentsObj.keys()) {
+                    val candidate = studentsObj.optJSONObject(key)
+                    if (candidate != null && candidate.has("periods")) {
+                        studentObj = candidate
+                        break
+                    }
+                }
+            }
+            if (studentObj == null) {
+                val firstKey = studentsObj.keys().asSequence().firstOrNull()
+                if (firstKey != null) studentObj = studentsObj.optJSONObject(firstKey)
+            }
+        } else if (studentsArr != null && studentsArr.length() > 0) {
+            if (!filterStudentId.isNullOrBlank()) {
+                for (i in 0 until studentsArr.length()) {
+                    val candidate = studentsArr.optJSONObject(i)
+                    if (candidate != null && (candidate.optString("name") == filterStudentId || candidate.optString("id") == filterStudentId)) {
+                        studentObj = candidate
+                        break
+                    }
+                }
+            }
+            if (studentObj == null) {
+                for (i in 0 until studentsArr.length()) {
+                    val candidate = studentsArr.optJSONObject(i)
+                    if (candidate != null && candidate.has("periods")) {
+                        studentObj = candidate
+                        break
+                    }
+                }
+            }
+            if (studentObj == null) {
+                studentObj = studentsArr.optJSONObject(0)
+            }
+        }
+
+        if (studentObj == null && result.has("periods")) {
+            studentObj = result
+        }
+
+        if (studentObj == null) return emptyList()
+
+        val periodObjects = mutableListOf<JSONObject>()
+        val pArr = studentObj.optJSONArray("periods")
+        val pObj = studentObj.optJSONObject("periods")
+
+        if (pArr != null) {
+            for (i in 0 until pArr.length()) {
+                val p = pArr.optJSONObject(i)
+                if (p != null) periodObjects.add(p)
+            }
+        } else if (pObj != null) {
+            val sortedKeys = pObj.keys().asSequence().sorted().toList()
+            for (k in sortedKeys) {
+                val p = pObj.optJSONObject(k)
+                if (p != null) periodObjects.add(p)
+            }
+        }
+
+        if (periodObjects.isEmpty()) return emptyList()
+
+        val sdf = SimpleDateFormat("yyyyMMdd", Locale.US)
+        val todayStr = sdf.format(Date())
+
+        val list = mutableListOf<AcademicPeriod>()
+        for ((idx, p) in periodObjects.withIndex()) {
+            val name = p.optString("name", "${idx + 1}")
+            val title = p.optString("fullname").ifBlank {
+                p.optString("title").ifBlank { "$name четверть" }
+            }
+            val startRaw = p.optString("start", "").replace("-", "").replace(".", "").trim()
+            val endRaw = p.optString("end", "").replace("-", "").replace(".", "").trim()
+
+            if (startRaw.length == 8 && endRaw.length == 8) {
+                val rangeDays = "$startRaw-$endRaw"
+                val isActive = todayStr in startRaw..endRaw
+                list.add(
+                    AcademicPeriod(
+                        id = name,
+                        title = title,
+                        start = startRaw,
+                        end = endRaw,
+                        rangeDays = rangeDays,
+                        isActive = isActive
+                    )
+                )
+            }
+        }
+
+        if (list.isNotEmpty() && list.none { it.isActive }) {
+            val active = list.firstOrNull { todayStr < it.end } ?: list.last()
+            return list.map { it.copy(isActive = it.id == active.id) }
+        }
+
+        return list
+    }
+
+    fun generateDefaultAcademicPeriods(now: Date = Date()): List<AcademicPeriod> {
+        val cal = Calendar.getInstance()
+        cal.time = now
+        val year = cal.get(Calendar.YEAR)
+        val month = cal.get(Calendar.MONTH) // 0-based: 0=Jan, 8=Sep
+        val schoolYearStart = if (month >= Calendar.SEPTEMBER) year else year - 1
+        val nextYear = schoolYearStart + 1
+
+        val sdf = SimpleDateFormat("yyyyMMdd", Locale.US)
+        val todayStr = sdf.format(now)
+
+        val p1 = AcademicPeriod("1", "1 четверть", "${schoolYearStart}0901", "${schoolYearStart}1026", "${schoolYearStart}0901-${schoolYearStart}1026")
+        val p2 = AcademicPeriod("2", "2 четверть", "${schoolYearStart}1105", "${schoolYearStart}1228", "${schoolYearStart}1105-${schoolYearStart}1228")
+        val p3 = AcademicPeriod("3", "3 четверть", "${nextYear}0111", "${nextYear}0322", "${nextYear}0111-${nextYear}0322")
+        val p4 = AcademicPeriod("4", "4 четверть", "${nextYear}0401", "${nextYear}0525", "${nextYear}0401-${nextYear}0525")
+
+        val periods = listOf(p1, p2, p3, p4)
+        val activePeriod = periods.firstOrNull { todayStr in it.start..it.end }
+            ?: if (todayStr < p1.end) p1 else if (todayStr < p2.end) p2 else if (todayStr < p3.end) p3 else p4
+
+        return periods.map { it.copy(isActive = it.id == activePeriod.id) }
     }
 
     suspend fun fetchDiary(
@@ -380,7 +547,6 @@ class EljurApiClient(
             Result.failure(e)
         }
     }
-
     suspend fun fetchMarks(
         token: String,
         vendor: String,
@@ -391,17 +557,51 @@ class EljurApiClient(
         try {
             if (token.isNotBlank() && token != "web_session") {
                 val vendorParam = if (vendor.isNotBlank()) "&vendor=$vendor" else ""
-                val targetDays = if (!days.isNullOrBlank()) days else getCurrentWeekRange()
 
+                val targetRanges = mutableListOf<String>()
+                if (!days.isNullOrBlank()) {
+                    targetRanges.add(days)
+                }
+
+                // If days not explicitly specified or as extra candidate, query periods
+                val periodsRes = fetchPeriods(token, vendor, studentId).getOrNull()
+                val activePeriod = periodsRes?.firstOrNull { it.isActive } ?: periodsRes?.firstOrNull()
+                if (activePeriod != null && activePeriod.rangeDays !in targetRanges) {
+                    targetRanges.add(activePeriod.rangeDays)
+                }
+
+                // Academic year quarter/term fallback ranges
+                val cal = Calendar.getInstance()
+                val currentYear = cal.get(Calendar.YEAR)
+                val month = cal.get(Calendar.MONTH)
+                val schoolYearStart = if (month >= Calendar.SEPTEMBER) currentYear else currentYear - 1
+                val sdf = SimpleDateFormat("yyyyMMdd", Locale.US)
+                val todayStr = sdf.format(cal.time)
+                cal.add(Calendar.DAY_OF_MONTH, 30)
+                val futureStr = sdf.format(cal.time)
+
+                val fullTermRange = "${schoolYearStart}0901-$futureStr"
+                if (fullTermRange !in targetRanges) targetRanges.add(fullTermRange)
+
+                val yearToDateRange = "${schoolYearStart}0901-$todayStr"
+                if (yearToDateRange !in targetRanges) targetRanges.add(yearToDateRange)
+
+                val currentWeek = getCurrentWeekRange()
+                if (currentWeek !in targetRanges) targetRanges.add(currentWeek)
+
+                // Build candidate URLs
                 val candidateUrls = mutableListOf<String>()
+                for (range in targetRanges) {
+                    if (!studentId.isNullOrBlank()) {
+                        candidateUrls.add("$baseUrl/apiv3/getmarks?devkey=$devKey&out_format=json&auth_token=$token$vendorParam&student=$studentId&days=$range")
+                    }
+                    candidateUrls.add("$baseUrl/apiv3/getmarks?devkey=$devKey&out_format=json&auth_token=$token$vendorParam&days=$range")
+                }
+
                 if (!studentId.isNullOrBlank()) {
                     candidateUrls.add("$baseUrl/apiv3/getmarks?devkey=$devKey&out_format=json&auth_token=$token$vendorParam&student=$studentId")
                 }
                 candidateUrls.add("$baseUrl/apiv3/getmarks?devkey=$devKey&out_format=json&auth_token=$token$vendorParam")
-                if (!studentId.isNullOrBlank()) {
-                    candidateUrls.add("$baseUrl/apiv3/getmarks?devkey=$devKey&out_format=json&auth_token=$token$vendorParam&student=$studentId&days=$targetDays")
-                }
-                candidateUrls.add("$baseUrl/apiv3/getmarks?devkey=$devKey&out_format=json&auth_token=$token$vendorParam&days=$targetDays")
 
                 for (url in candidateUrls) {
                     try {
@@ -419,15 +619,24 @@ class EljurApiClient(
                             val json = JSONObject(body)
                             val respObj = json.optJSONObject("response") ?: json
                             if (respObj.optInt("state", 200) == 200) {
-                                val marks = parseApiMarks(respObj)
+                                val marks = parseApiMarks(respObj, studentId)
                                 if (marks.isNotEmpty()) {
+                                    Log.d("EljurApiClient", "Successfully fetched ${marks.size} subjects from $url")
                                     return@withContext Result.success(marks)
                                 }
                             }
                         }
                     } catch (e: Exception) {
-                        Log.w("EljurApiClient", "Marks API request failed: ${e.message} for $url")
+                        Log.w("EljurApiClient", "Marks API candidate failed: ${e.message} for $url")
                     }
+                }
+            }
+
+            // Web fallback
+            if (!cookies.isNullOrEmpty()) {
+                val webMarks = scrapeMarksFromWeb(cookies)
+                if (webMarks.isSuccess && webMarks.getOrNull()?.isNotEmpty() == true) {
+                    return@withContext webMarks
                 }
             }
 
@@ -437,94 +646,256 @@ class EljurApiClient(
         }
     }
 
-    private fun parseApiMarks(respObj: JSONObject): List<SubjectSummary> {
+    fun parseApiMarks(respObj: JSONObject, filterStudentId: String? = null): List<SubjectSummary> {
         val result = respObj.optJSONObject("result") ?: respObj
 
-        // Students can be a JSONObject: { "student_id": { ... } } or JSONArray: [ { ... } ]
-        val studentObj: JSONObject = (if (result.has("students")) {
-            val stObj = result.optJSONObject("students")
-            if (stObj != null && stObj.length() > 0) {
-                val firstKey = stObj.keys().asSequence().firstOrNull()
-                if (firstKey != null) stObj.optJSONObject(firstKey) else null
-            } else {
-                val stArr = result.optJSONArray("students")
-                if (stArr != null && stArr.length() > 0) stArr.optJSONObject(0) else null
-            }
-        } else {
-            result
-        }) ?: return emptyList()
+        // 1. Locate student container
+        var studentObj: JSONObject? = null
+        val studentsObj = result.optJSONObject("students")
+        val studentsArr = result.optJSONArray("students")
 
-        // Lessons can be a JSONArray or JSONObject
+        if (studentsObj != null && studentsObj.length() > 0) {
+            if (!filterStudentId.isNullOrBlank() && studentsObj.has(filterStudentId)) {
+                studentObj = studentsObj.optJSONObject(filterStudentId)
+            }
+            if (studentObj == null) {
+                for (key in studentsObj.keys()) {
+                    val candidate = studentsObj.optJSONObject(key)
+                    if (candidate != null && (candidate.has("lessons") || candidate.has("marks"))) {
+                        studentObj = candidate
+                        break
+                    }
+                }
+            }
+            if (studentObj == null) {
+                val firstKey = studentsObj.keys().asSequence().firstOrNull()
+                if (firstKey != null) studentObj = studentsObj.optJSONObject(firstKey)
+            }
+        } else if (studentsArr != null && studentsArr.length() > 0) {
+            if (!filterStudentId.isNullOrBlank()) {
+                for (i in 0 until studentsArr.length()) {
+                    val candidate = studentsArr.optJSONObject(i)
+                    if (candidate != null && (candidate.optString("name") == filterStudentId || candidate.optString("id") == filterStudentId)) {
+                        studentObj = candidate
+                        break
+                    }
+                }
+            }
+            if (studentObj == null) {
+                for (i in 0 until studentsArr.length()) {
+                    val candidate = studentsArr.optJSONObject(i)
+                    if (candidate != null && (candidate.has("lessons") || candidate.has("marks"))) {
+                        studentObj = candidate
+                        break
+                    }
+                }
+            }
+            if (studentObj == null) {
+                studentObj = studentsArr.optJSONObject(0)
+            }
+        }
+
+        if (studentObj == null) {
+            if (result.has("lessons") || result.has("marks")) {
+                studentObj = result
+            }
+        }
+
+        if (studentObj == null) return emptyList()
+
+        // 2. Extract lessons
         val lessonObjects = mutableListOf<JSONObject>()
         val lessonsArr = studentObj.optJSONArray("lessons")
+        val lessonsObj = studentObj.optJSONObject("lessons")
+
         if (lessonsArr != null) {
             for (i in 0 until lessonsArr.length()) {
                 val l = lessonsArr.optJSONObject(i)
                 if (l != null) lessonObjects.add(l)
             }
-        } else {
-            val lessonsObj = studentObj.optJSONObject("lessons")
-            if (lessonsObj != null) {
-                val sortedKeys = lessonsObj.keys().asSequence().sorted().toList()
-                for (k in sortedKeys) {
-                    val l = lessonsObj.optJSONObject(k)
-                    if (l != null) lessonObjects.add(l)
-                }
+        } else if (lessonsObj != null) {
+            val sortedKeys = lessonsObj.keys().asSequence().sorted().toList()
+            for (k in sortedKeys) {
+                val l = lessonsObj.optJSONObject(k)
+                if (l != null) lessonObjects.add(l)
             }
         }
 
         val list = mutableListOf<SubjectSummary>()
         for (lessonObj in lessonObjects) {
-            val name = lessonObj.optString("name", "Предмет")
-            val avgStr = lessonObj.optString("average", "0").replace(',', '.')
-            val avgFloat = avgStr.toFloatOrNull() ?: 0f
+            val name = lessonObj.optString("name").ifBlank {
+                lessonObj.optString("title").ifBlank {
+                    lessonObj.optString("subject").ifBlank { "Предмет" }
+                }
+            }
+            val avgRaw = lessonObj.optString("average", "0").replace(',', '.')
+            val avgFloat = avgRaw.toFloatOrNull() ?: 0f
+            val finalMark = lessonObj.optString("final_mark").ifBlank {
+                lessonObj.optString("itog").ifBlank { null }
+            }
 
             val marksList = mutableListOf<Mark>()
-            // Marks can be JSONArray or JSONObject
             val marksArr = lessonObj.optJSONArray("marks")
-            val markObjects = mutableListOf<JSONObject>()
+            val marksObj = lessonObj.optJSONObject("marks")
+
             if (marksArr != null) {
                 for (j in 0 until marksArr.length()) {
-                    val m = marksArr.optJSONObject(j)
-                    if (m != null) markObjects.add(m)
+                    val mObj = marksArr.optJSONObject(j)
+                    if (mObj != null) {
+                        parseSingleMark(mObj)?.let { marksList.add(it) }
+                    } else {
+                        val primVal = marksArr.optString(j, "").trim()
+                        if (primVal.isNotEmpty()) {
+                            marksList.add(Mark(value = primVal))
+                        }
+                    }
                 }
-            } else {
-                val marksObj = lessonObj.optJSONObject("marks")
-                if (marksObj != null) {
-                    val sortedKeys = marksObj.keys().asSequence().sorted().toList()
-                    for (k in sortedKeys) {
-                        val m = marksObj.optJSONObject(k)
-                        if (m != null) markObjects.add(m)
+            } else if (marksObj != null) {
+                val sortedKeys = marksObj.keys().asSequence().sorted().toList()
+                for (k in sortedKeys) {
+                    val mObj = marksObj.optJSONObject(k)
+                    if (mObj != null) {
+                        parseSingleMark(mObj)?.let { marksList.add(it) }
+                    } else {
+                        val primVal = marksObj.optString(k, "").trim()
+                        if (primVal.isNotEmpty()) {
+                            marksList.add(Mark(value = primVal))
+                        }
                     }
                 }
             }
 
-            for (mObj in markObjects) {
-                val valStr = mObj.optString("value", "")
-                val weight = mObj.optInt("weight", 1)
-                val date = mObj.optString("date", "")
-                val comment = if (mObj.has("comment") && !mObj.isNull("comment")) mObj.getString("comment") else null
-                if (valStr.isNotEmpty()) {
-                    marksList.add(
-                        Mark(
-                            value = valStr,
-                            weight = weight,
-                            date = date,
-                            comment = comment
-                        )
-                    )
-                }
+            val effectiveAvg = if (avgFloat > 0f) avgFloat else {
+                val numeric = marksList.mapNotNull { it.numericValue }
+                if (numeric.isNotEmpty()) numeric.average().toFloat() else 0f
             }
 
             list.add(
                 SubjectSummary(
                     subject = name,
-                    average = avgFloat,
-                    marks = marksList
+                    average = effectiveAvg,
+                    marks = marksList,
+                    finalMark = finalMark
                 )
             )
         }
+
         return list.sortedByDescending { it.average }
+    }
+
+    private fun parseSingleMark(mObj: JSONObject): Mark? {
+        val valStr = mObj.optString("value").ifBlank {
+            mObj.optString("mark").ifBlank {
+                mObj.optString("val", "")
+            }
+        }.trim()
+
+        if (valStr.isEmpty()) return null
+
+        val weightRaw = mObj.opt("weight")
+        val weight = when (weightRaw) {
+            is Number -> weightRaw.toInt()
+            is String -> weightRaw.toDoubleOrNull()?.toInt() ?: 1
+            else -> 1
+        }
+
+        val rawDate = mObj.optString("date", "")
+        val formattedDate = formatMarkDate(rawDate)
+
+        val comment = mObj.optString("comment").ifBlank {
+            mObj.optString("control_type").ifBlank {
+                mObj.optString("lesson_comment").ifBlank { null }
+            }
+        }
+
+        val isControl = mObj.optBoolean("is_control", false) ||
+                mObj.optString("control_type_short").isNotBlank() ||
+                (comment?.contains("контроль", ignoreCase = true) == true)
+
+        return Mark(
+            value = valStr,
+            weight = weight,
+            date = formattedDate,
+            comment = comment,
+            isControl = isControl
+        )
+    }
+
+    private fun formatMarkDate(raw: String): String {
+        if (raw.isBlank()) return ""
+        val clean = raw.replace("-", "").replace(".", "")
+        return if (clean.length == 8 && clean.all { it.isDigit() }) {
+            "${clean.substring(6, 8)}.${clean.substring(4, 6)}"
+        } else if (raw.contains("-") && raw.length >= 10) {
+            val parts = raw.split("-")
+            "${parts[2].take(2)}.${parts[1]}"
+        } else raw
+    }
+
+    fun scrapeMarksFromWeb(cookies: String): Result<List<SubjectSummary>> {
+        return try {
+            val candidateUrls = listOf(
+                "$baseUrl/journal-student",
+                "$baseUrl/journal-app/itog",
+                "$baseUrl/journal-app/marks",
+                "$baseUrl/journal-app"
+            )
+
+            for (targetUrl in candidateUrls) {
+                val req = Request.Builder()
+                    .url(targetUrl)
+                    .header("User-Agent", browserUserAgent)
+                    .addHeader("Cookie", cookies)
+                    .build()
+                val resp = client.newCall(req).execute()
+                val html = resp.body?.string() ?: continue
+                val doc = Jsoup.parse(html)
+
+                val rows = doc.select("tr.journal-table__row, tr.marks-row, tr.dnevnik-row, table.journal tr, table.dnevnik tr")
+                if (rows.isEmpty()) continue
+
+                val list = mutableListOf<SubjectSummary>()
+                for (row in rows) {
+                    val subjectElem = row.selectFirst(".subject, .lesson-name, td:first-child, .subject-title") ?: continue
+                    val subjectName = subjectElem.text().trim()
+                    if (subjectName.isBlank() || subjectName.contains("Предмет", true) || subjectName.length < 2) continue
+
+                    val markElements = row.select(".mark, .grade, .mark-badge, span.cell-mark, .mark_val")
+                    val marks = mutableListOf<Mark>()
+                    for (mElem in markElements) {
+                        val mVal = mElem.text().trim()
+                        if (mVal.isNotBlank() && mVal.length <= 3) {
+                            marks.add(Mark(value = mVal))
+                        }
+                    }
+
+                    val avgElem = row.selectFirst(".average, .avg, .average-grade, td:last-child")
+                    val avgStr = avgElem?.text()?.replace(',', '.')?.trim()
+                    val avgFloat = avgStr?.toFloatOrNull() ?: if (marks.isNotEmpty()) {
+                        val num = marks.mapNotNull { it.numericValue }
+                        if (num.isNotEmpty()) num.average().toFloat() else 0f
+                    } else 0f
+
+                    if (marks.isNotEmpty() || avgFloat > 0f) {
+                        list.add(
+                            SubjectSummary(
+                                subject = subjectName,
+                                average = avgFloat,
+                                marks = marks
+                            )
+                        )
+                    }
+                }
+
+                if (list.isNotEmpty()) {
+                    return Result.success(list.sortedByDescending { it.average })
+                }
+            }
+
+            Result.failure(Exception("Пустая HTML страница оценок"))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
     }
 
     private fun parseApiDiaryDays(respObj: JSONObject): List<DaySchedule> {
@@ -554,10 +925,25 @@ class EljurApiClient(
             val studentsObj = result.optJSONObject("students")
             val studentsArr = result.optJSONArray("students")
             val targetStudentObj = if (studentsObj != null && studentsObj.length() > 0) {
-                val firstKey = studentsObj.keys().asSequence().firstOrNull()
-                if (firstKey != null) studentsObj.optJSONObject(firstKey) else null
+                var found: JSONObject? = null
+                for (k in studentsObj.keys()) {
+                    val s = studentsObj.optJSONObject(k)
+                    if (s != null && (s.has("days") || s.has("items"))) {
+                        found = s
+                        break
+                    }
+                }
+                found ?: studentsObj.optJSONObject(studentsObj.keys().asSequence().first())
             } else if (studentsArr != null && studentsArr.length() > 0) {
-                studentsArr.optJSONObject(0)
+                var found: JSONObject? = null
+                for (i in 0 until studentsArr.length()) {
+                    val s = studentsArr.optJSONObject(i)
+                    if (s != null && (s.has("days") || s.has("items"))) {
+                        found = s
+                        break
+                    }
+                }
+                found ?: studentsArr.optJSONObject(0)
             } else null
 
             if (targetStudentObj != null) {
