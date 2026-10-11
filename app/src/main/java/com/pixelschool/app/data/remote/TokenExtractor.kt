@@ -34,23 +34,44 @@ object TokenExtractor {
             val token = uri.getQueryParameter("token")
                 ?: uri.getQueryParameter("auth_token")
                 ?: extractParamFromFragment(uri, "token")
+                ?: extractParamFromFragment(uri, "auth_token")
 
             val vendor = uri.getQueryParameter("vendor")
                 ?: extractParamFromFragment(uri, "vendor")
+                ?: if (!token.isNullOrBlank()) "edu" else null
 
             val login = uri.getQueryParameter("login")
                 ?: extractParamFromFragment(uri, "login")
 
             if (!vToken.isNullOrBlank()) {
                 AuthCredentials(vToken = vToken)
-            } else if (!token.isNullOrBlank() && !vendor.isNullOrBlank()) {
-                AuthCredentials(token = token, vendor = vendor, login = login)
+            } else if (!token.isNullOrBlank()) {
+                AuthCredentials(token = token, vendor = vendor ?: "edu", login = login)
             } else {
                 null
             }
         } catch (_: Exception) {
             null
         }
+    }
+
+    /**
+     * Extracts auth_token or token value from cookie header if present.
+     */
+    fun extractAuthTokenFromCookies(cookies: String?): String? {
+        if (cookies.isNullOrBlank()) return null
+        for (part in cookies.split(";")) {
+            val trimmed = part.trim()
+            if (trimmed.startsWith("auth_token=")) {
+                val value = trimmed.substringAfter("auth_token=").trim()
+                if (value.isNotBlank()) return value
+            }
+            if (trimmed.startsWith("token=")) {
+                val value = trimmed.substringAfter("token=").trim()
+                if (value.isNotBlank()) return value
+            }
+        }
+        return null
     }
 
     private fun extractParamFromFragment(uri: Uri, paramName: String): String? {
