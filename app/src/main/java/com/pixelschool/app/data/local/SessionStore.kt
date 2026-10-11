@@ -47,14 +47,25 @@ class SessionStore(context: Context) {
             existingFirst
         }
 
-        val derivedSchool = if (session.schoolName.isNotBlank() && session.schoolName != "Республика Крым" && session.schoolName != "ГИС РК «Образование»") {
-            session.schoolName
-        } else if (session.schoolTitle.isNotBlank() && session.schoolTitle != "Республика Крым" && session.schoolTitle != "ГИС РК «Образование»") {
-            session.schoolTitle
-        } else if (existingSchool.isNotBlank() && existingSchool != "Республика Крым" && existingSchool != "ГИС РК «Образование»") {
-            existingSchool
-        } else {
-            session.schoolName.ifBlank { session.schoolTitle.ifBlank { "Республика Крым" } }
+        fun isGoodSchool(s: String?): Boolean {
+            if (s.isNullOrBlank()) return false
+            if (s == "Республика Крым" || s == "ГИС РК «Образование»") return false
+            return s.contains("школ", ignoreCase = true) ||
+                   s.contains("гимназ", ignoreCase = true) ||
+                   s.contains("лицей", ignoreCase = true) ||
+                   s.contains("СОШ", ignoreCase = true) ||
+                   s.contains("МБОУ", ignoreCase = true) ||
+                   s.contains("МАОУ", ignoreCase = true)
+        }
+
+        val derivedSchool = when {
+            isGoodSchool(session.schoolName) -> session.schoolName
+            isGoodSchool(session.schoolTitle) -> session.schoolTitle
+            isGoodSchool(existingSchool) -> existingSchool
+            session.schoolName.isNotBlank() && session.schoolName != "Республика Крым" && session.schoolName != "ГИС РК «Образование»" -> session.schoolName
+            session.schoolTitle.isNotBlank() && session.schoolTitle != "Республика Крым" && session.schoolTitle != "ГИС РК «Образование»" -> session.schoolTitle
+            existingSchool.isNotBlank() && existingSchool != "Республика Крым" && existingSchool != "ГИС РК «Образование»" -> existingSchool
+            else -> session.schoolName.ifBlank { session.schoolTitle.ifBlank { "Республика Крым" } }
         }
 
         val effectiveUserTitle = if (session.userTitle.isNotBlank() && session.userTitle != "Ученик") {
@@ -115,14 +126,25 @@ class SessionStore(context: Context) {
             "Ученик"
         }
 
-        val effectiveSchool = if (rawSchool.isNotBlank() && rawSchool != "Республика Крым" && rawSchool != "ГИС РК «Образование»") {
-            rawSchool
-        } else if (schoolName.isNotBlank() && schoolName != "Республика Крым" && schoolName != "ГИС РК «Образование»") {
-            schoolName
-        } else if (rawSchool.isNotBlank()) {
-            rawSchool
-        } else {
-            "Республика Крым"
+        fun isGoodSchool(s: String?): Boolean {
+            if (s.isNullOrBlank()) return false
+            if (s == "Республика Крым" || s == "ГИС РК «Образование»") return false
+            return s.contains("школ", ignoreCase = true) ||
+                   s.contains("гимназ", ignoreCase = true) ||
+                   s.contains("лицей", ignoreCase = true) ||
+                   s.contains("СОШ", ignoreCase = true) ||
+                   s.contains("МБОУ", ignoreCase = true) ||
+                   s.contains("МАОУ", ignoreCase = true)
+        }
+
+        val effectiveSchool = when {
+            isGoodSchool(schoolName) -> schoolName
+            isGoodSchool(rawSchool) -> rawSchool
+            schoolName.isNotBlank() && schoolName != "Республика Крым" && schoolName != "ГИС РК «Образование»" -> schoolName
+            rawSchool.isNotBlank() && rawSchool != "Республика Крым" && rawSchool != "ГИС РК «Образование»" -> rawSchool
+            rawSchool.isNotBlank() -> rawSchool
+            schoolName.isNotBlank() -> schoolName
+            else -> "Республика Крым"
         }
 
         return UserSession(

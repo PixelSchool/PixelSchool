@@ -62,6 +62,12 @@ class DiaryRepository(
             currentSession.schoolTitle.isBlank() ||
             currentSession.schoolTitle == "ГИС РК «Образование»" ||
             currentSession.schoolTitle == "Республика Крым" ||
+            currentSession.schoolTitle.contains("·") ||
+            (!currentSession.schoolTitle.contains("школ", ignoreCase = true) &&
+             !currentSession.schoolTitle.contains("гимназ", ignoreCase = true) &&
+             !currentSession.schoolTitle.contains("лицей", ignoreCase = true) &&
+             !currentSession.schoolTitle.contains("СОШ", ignoreCase = true) &&
+             !currentSession.schoolTitle.contains("МБОУ", ignoreCase = true)) ||
             currentSession.studentId.isBlank()
         ) {
             try {
@@ -212,6 +218,10 @@ class DiaryRepository(
         var lastError: Throwable? = null
         if (!cookies.isNullOrEmpty()) {
             val webMarks = apiClient.scrapeMarksFromWeb(cookies, effectiveStudentId)
+            val updatedS = sessionStore.getSession()
+            if (updatedS != null && updatedS != _session.value) {
+                _session.value = updatedS
+            }
             if (webMarks.isSuccess && webMarks.getOrNull()?.isNotEmpty() == true) {
                 return webMarks.getOrThrow()
             }

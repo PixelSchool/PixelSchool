@@ -581,10 +581,34 @@ class EljurApiClient(
     )
 
     private fun extractProfileFromHtmlScripts(html: String): UserProfileScrapeResult {
+        // Check JournalConfig first (standard in ElJur pages like journal-student-grades-action)
+        if (html.contains("JournalConfig")) {
+            val jcMatch = Regex("""var\s+JournalConfig\s*=\s*(\{.+?\});""", RegexOption.DOT_MATCHES_ALL).find(html)
+            if (jcMatch != null) {
+                try {
+                    val jc = JSONObject(jcMatch.groupValues[1])
+                    val fio = jc.optString("fio").trim()
+                    val studentId = jc.optString("student").ifBlank { jc.optString("student_id") }.trim()
+                    if (fio.isNotBlank()) {
+                        val parts = fio.split(Regex("""\s+""")).filter { it.isNotBlank() }
+                        val last = parts.getOrNull(0) ?: ""
+                        val first = parts.getOrNull(1) ?: ""
+                        return UserProfileScrapeResult(
+                            name = fio,
+                            firstName = first,
+                            lastName = last,
+                            studentId = studentId
+                        )
+                    }
+                } catch (_: Exception) {}
+            }
+        }
+
         val patterns = listOf(
             Regex("""(?:gon|window\.gon)\s*=\s*(\{.+?\});""", RegexOption.DOT_MATCHES_ALL),
             Regex("""(?:gon\.user|window\.gon\.user)\s*=\s*(\{.+?\});""", RegexOption.DOT_MATCHES_ALL),
-            Regex("""(?:gon\.profile|window\.gon\.profile)\s*=\s*(\{.+?\});""", RegexOption.DOT_MATCHES_ALL)
+            Regex("""(?:gon\.profile|window\.gon\.profile)\s*=\s*(\{.+?\});""", RegexOption.DOT_MATCHES_ALL),
+            Regex("""window\.__INITIAL_STATE__\s*=\s*(\{.+?\});""", RegexOption.DOT_MATCHES_ALL)
         )
         for (pattern in patterns) {
             val match = pattern.find(html) ?: continue
@@ -643,26 +667,52 @@ class EljurApiClient(
 
     fun scrapeUserProfile(cookies: String?): UserProfileScrapeResult {
         if (cookies.isNullOrBlank()) return UserProfileScrapeResult()
-        val candidateUrls = listOf(
-            "$baseUrl/?show=home",
-            "$baseUrl/journal-app",
-            "$baseUrl/journal-student-grades-action",
-            baseUrl
-        )
         var scrapedName = ""
         var scrapedFirstName = ""
         var scrapedLastName = ""
         var scrapedSchool = ""
         var scrapedStudentId = ""
 
+        // 0. Extract profile from JWT tokens embedded in cookies (e.g. ej_esia_v2, jwt_v_2)
+        val jwts = TokenExtractor.extractJwtListFromCookies(cookies)
+        for (jwt in jwts) {
+            val prof = TokenExtractor.extractProfileFromJwt(jwt)
+            if (prof != null) {
+                if (scrapedFirstName.isBlank() && !prof.firstName.isNullOrBlank()) scrapedFirstName = prof.firstName
+                if (scrapedLastName.isBlank() && !prof.lastName.isNullOrBlank()) scrapedLastName = prof.lastName
+                if (scrapedName.isBlank() && !prof.fullName.isNullOrBlank()) scrapedName = prof.fullName
+                if (scrapedSchool.isBlank() && !prof.school.isNullOrBlank()) scrapedSchool = prof.school
+            }
+        }
+        if (scrapedName.isBlank() && scrapedLastName.isNotBlank() && scrapedFirstName.isNotBlank()) {
+            scrapedName = "$scrapedLastName $scrapedFirstName".trim()
+        }
+
+        val hasRealSchool = scrapedSchool.isNotBlank() &&
+            (scrapedSchool.contains("школ", ignoreCase = true) ||
+             scrapedSchool.contains("гимназ", ignoreCase = true) ||
+             scrapedSchool.contains("лицей", ignoreCase = true) ||
+             scrapedSchool.contains("СОШ", ignoreCase = true) ||
+             scrapedSchool.contains("МБОУ", ignoreCase = true))
+
+        val candidateUrls = mutableListOf<String>()
+        if (scrapedStudentId.isNotBlank()) {
+            candidateUrls.add("$baseUrl/journal-student-grades-action/u.$scrapedStudentId")
+        }
+        candidateUrls.add("$baseUrl/journal-student-grades-action")
+        candidateUrls.add("$baseUrl/?show=home")
+        candidateUrls.add("$baseUrl/journal-app")
+        candidateUrls.add(baseUrl)
+
         for (url in candidateUrls) {
-            if (scrapedName.isNotBlank() && scrapedSchool.isNotBlank() && scrapedStudentId.isNotBlank()) break
+            val isComplete = scrapedName.isNotBlank() && hasRealSchool && scrapedStudentId.isNotBlank()
+            if (isComplete) break
             try {
                 val req = buildRequest(url, cookies, isJson = false)
                 val resp = client.newCall(req).execute()
                 val html = resp.body?.string() ?: continue
 
-                // 1. Try script extraction
+                // 1. Try script extraction (JournalConfig, gon, etc.)
                 val scriptResult = extractProfileFromHtmlScripts(html)
                 if (scriptResult.name.isNotBlank() && scrapedName.isBlank()) {
                     scrapedName = scriptResult.name
@@ -682,6 +732,41 @@ class EljurApiClient(
                     val foundId = extractDynamicStudentId(html)
                     if (!foundId.isNullOrBlank()) {
                         scrapedStudentId = foundId
+                    }
+                }
+
+                // 2. Extract title if school or name is missing:
+                // Format: "Отметки из журнала: ФИО · I четверть — Электронный журнал — МБОУ "Школа" — Город"
+                val pageTitle = doc.title().trim()
+                if (pageTitle.isNotBlank()) {
+                    val segments = pageTitle.split(Regex("""\s*[—–-]\s*""")).map { it.trim() }
+                    if (scrapedSchool.isBlank()) {
+                        val schoolSeg = segments.firstOrNull { seg ->
+                            seg.contains("МБОУ", ignoreCase = true) ||
+                            seg.contains("МАОУ", ignoreCase = true) ||
+                            seg.contains("СОШ", ignoreCase = true) ||
+                            seg.contains("школ", ignoreCase = true) ||
+                            seg.contains("гимназ", ignoreCase = true) ||
+                            seg.contains("лицей", ignoreCase = true)
+                        }
+                        if (schoolSeg != null && schoolSeg.length >= 3) {
+                            scrapedSchool = schoolSeg
+                        }
+                    }
+                    if (scrapedName.isBlank()) {
+                        val fioPrefix = "Отметки из журнала:"
+                        val firstSeg = segments.firstOrNull() ?: ""
+                        if (firstSeg.contains(fioPrefix)) {
+                            val rawFio = firstSeg.substringAfter(fioPrefix).substringBefore("·").trim()
+                            if (rawFio.isNotBlank() && rawFio.length >= 3) {
+                                scrapedName = rawFio
+                                val parts = rawFio.split(Regex("""\s+""")).filter { it.isNotBlank() }
+                                if (parts.size >= 2) {
+                                    scrapedLastName = parts[0]
+                                    scrapedFirstName = parts[1]
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -712,8 +797,8 @@ class EljurApiClient(
                     var rawSchool = schoolElem?.text()?.trim()
                     if (!rawSchool.isNullOrBlank()) {
                         if (rawSchool.contains(",")) {
-                            val segments = rawSchool.split(",").map { it.trim() }
-                            val foundSchool = segments.firstOrNull { seg ->
+                            val parts = rawSchool.split(",").map { it.trim() }
+                            val foundSchool = parts.firstOrNull { seg ->
                                 seg.contains("СОШ", ignoreCase = true) ||
                                 seg.contains("школ", ignoreCase = true) ||
                                 seg.contains("гимназ", ignoreCase = true) ||
@@ -1692,6 +1777,7 @@ class EljurApiClient(
                 }
 
                 val doc = Jsoup.parse(html)
+
                 val parsed = parseGradesHtml(doc)
                 if (parsed.isNotEmpty()) {
                     Log.d(TAG, "Successfully parsed ${parsed.size} subjects from report card table at $finalUrl")
