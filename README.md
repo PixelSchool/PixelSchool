@@ -7,7 +7,7 @@
 ![Compose](https://img.shields.io/badge/Jetpack%20Compose-BOM%202024.10.00-4285F4.svg?logo=jetpackcompose)
 ![Design System](https://img.shields.io/badge/Material%203-Expressive-FF6F00.svg?logo=materialdesign)
 ![Platform](https://img.shields.io/badge/Platform-Android%208.0%2B%20(API%2026%2B)-3DDC84.svg?logo=android)
-![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)
+![License](https://img.shields.io/badge/License-MIT-blue.svg)
 
 **Современный, чистый и выразительный Android-клиент для школьного электронного дневника (edu.rk.gov.ru / ElJur).**
 
@@ -111,4 +111,4 @@ app/build/outputs/apk/debug/app-debug.apk
 
 ## 📄 Лицензия
 
-Проект распространяется под лицензией [Apache License 2.0](LICENSE).
+Проект распространяется под лицензией [MIT License](LICENSE).
