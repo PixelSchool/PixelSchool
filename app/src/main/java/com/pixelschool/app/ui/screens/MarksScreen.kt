@@ -29,10 +29,13 @@ import androidx.compose.material3.PrimaryScrollableTabRow
 import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRowDefaults
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.Dp
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -634,10 +637,19 @@ fun GradesTabRow(
     tabs: List<String>,
     onTabSelected: (Int) -> Unit
 ) {
-    ScrollableTabRow(
+    PrimaryScrollableTabRow(
         selectedTabIndex = selectedTabIndex,
         edgePadding = 16.dp,
-        divider = {}
+        divider = {},
+        indicator = {
+            TabRowDefaults.PrimaryIndicator(
+                modifier = Modifier.tabIndicatorOffset(selectedTabIndex),
+                width = Dp.Unspecified,
+                height = 3.dp,
+                shape = RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp),
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
     ) {
         tabs.forEachIndexed { index, title ->
             Tab(
@@ -647,6 +659,7 @@ fun GradesTabRow(
                     Text(
                         text = title,
                         style = MaterialTheme.typography.titleSmall,
+                        fontWeight = if (selectedTabIndex == index) FontWeight.Bold else FontWeight.Medium,
                         maxLines = 1,
                         softWrap = false
                     )
