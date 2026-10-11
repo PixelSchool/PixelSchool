@@ -111,6 +111,25 @@ class EljurApiClient(
         )
     }
 
+    private fun maskId(id: String?): String {
+        if (id.isNullOrBlank()) return "none"
+        return if (id.length > 4) "${id.take(2)}***${id.takeLast(2)}" else "***"
+    }
+
+    fun extractDynamicStudentId(html: String): String? {
+        if (html.isBlank()) return null
+        val linkRegex = Regex("""href=["'][^"']*/journal-(?:app|student-grades-action|student-diary-action)/u\.(\d+)[^"']*["']""")
+        linkRegex.find(html)?.groupValues?.getOrNull(1)?.let { return it }
+
+        val userPathRegex = Regex("""/(?:journal-[^/]+/)?u\.(\d+)""")
+        userPathRegex.find(html)?.groupValues?.getOrNull(1)?.let { return it }
+
+        val jsonRegex = Regex("""["'](?:student_id|studentId|userId|user_id)["']\s*[:=]\s*["']?(\d{4,})["']?""")
+        jsonRegex.find(html)?.groupValues?.getOrNull(1)?.let { return it }
+
+        return null
+    }
+
     fun parseJsonResponse(response: okhttp3.Response, body: String?, request: Request): JSONObject? {
         if (body.isNullOrBlank()) return null
         val contentType = response.header("Content-Type")?.lowercase() ?: ""
@@ -426,23 +445,30 @@ class EljurApiClient(
                 val profileResult = scrapeUserProfile(cookies)
                 val finalName = if (enriched.userTitle.isNotBlank() && enriched.userTitle != "Ученик") {
                     enriched.userTitle
-                } else if (profileResult.first.isNotBlank()) {
-                    profileResult.first
+                } else if (profileResult.name.isNotBlank()) {
+                    profileResult.name
                 } else {
                     fallbackUserName ?: "Ученик"
                 }
 
                 val finalSchool = if (enriched.schoolTitle.isNotBlank() && enriched.schoolTitle != "ГИС РК «Образование»") {
                     enriched.schoolTitle
-                } else if (profileResult.second.isNotBlank()) {
-                    profileResult.second
+                } else if (profileResult.school.isNotBlank()) {
+                    profileResult.school
                 } else {
                     "Республика Крым"
                 }
 
+                val finalStudentId = if (enriched.studentId.isNotBlank()) {
+                    enriched.studentId
+                } else {
+                    profileResult.studentId
+                }
+
                 val rawSession = enriched.copy(
                     userTitle = finalName,
-                    schoolTitle = finalSchool
+                    schoolTitle = finalSchool,
+                    studentId = finalStudentId
                 )
                 return@withContext Result.success(rawSession)
             }
@@ -453,8 +479,14 @@ class EljurApiClient(
         }
     }
 
-    fun scrapeUserProfile(cookies: String?): Pair<String, String> {
-        if (cookies.isNullOrBlank()) return "" to ""
+    data class UserProfileScrapeResult(
+        val name: String = "",
+        val school: String = "",
+        val studentId: String = ""
+    )
+
+    fun scrapeUserProfile(cookies: String?): UserProfileScrapeResult {
+        if (cookies.isNullOrBlank()) return UserProfileScrapeResult()
         val candidateUrls = listOf(
             "$baseUrl/?show=home",
             "$baseUrl/journal-app",
@@ -462,14 +494,22 @@ class EljurApiClient(
         )
         var scrapedName = ""
         var scrapedSchool = ""
+        var scrapedStudentId = ""
 
         for (url in candidateUrls) {
-            if (scrapedName.isNotBlank() && scrapedSchool.isNotBlank()) break
+            if (scrapedName.isNotBlank() && scrapedSchool.isNotBlank() && scrapedStudentId.isNotBlank()) break
             try {
                 val req = buildRequest(url, cookies, isJson = false)
                 val resp = client.newCall(req).execute()
                 val html = resp.body?.string() ?: continue
                 val doc = Jsoup.parse(html)
+
+                if (scrapedStudentId.isBlank()) {
+                    val foundId = extractDynamicStudentId(html)
+                    if (!foundId.isNullOrBlank()) {
+                        scrapedStudentId = foundId
+                    }
+                }
 
                 if (scrapedName.isBlank()) {
                     val nameElem = doc.selectFirst(
@@ -498,7 +538,7 @@ class EljurApiClient(
             } catch (_: Exception) {}
         }
 
-        return scrapedName to scrapedSchool
+        return UserProfileScrapeResult(scrapedName, scrapedSchool, scrapedStudentId)
     }
 
     fun getCurrentWeekRange(date: Date = Date()): String {
@@ -1378,17 +1418,47 @@ class EljurApiClient(
 
     fun scrapeMarksFromWeb(cookies: String, studentId: String? = null): Result<List<SubjectSummary>> {
         return try {
-            val cleanStudent = studentId?.removePrefix("u.")
+            var dynamicStudentId = studentId?.removePrefix("u.")?.takeIf { it.isNotBlank() }
+
+            // If studentId was not provided, attempt dynamic discovery from home / journal-app pages
+            if (dynamicStudentId.isNullOrBlank()) {
+                val homeUrls = listOf(
+                    "$baseUrl/?show=home",
+                    "$baseUrl/journal-app",
+                    baseUrl
+                )
+                for (hUrl in homeUrls) {
+                    try {
+                        val req = buildRequest(hUrl, cookies, isJson = false)
+                        val resp = client.newCall(req).execute()
+                        val html = resp.body?.string() ?: ""
+                        val foundId = extractDynamicStudentId(html)
+                        if (!foundId.isNullOrBlank()) {
+                            dynamicStudentId = foundId
+                            Log.d(TAG, "Dynamically discovered student ID: ${maskId(foundId)} (SSR routing)")
+                            break
+                        }
+                    } catch (_: Exception) {}
+                }
+            }
+
             val candidateUrls = mutableListOf<String>()
-            if (!cleanStudent.isNullOrBlank()) {
-                candidateUrls.add("$baseUrl/journal-student-grades-action/u.$cleanStudent")
+            if (!dynamicStudentId.isNullOrBlank()) {
+                candidateUrls.add("$baseUrl/journal-student-grades-action/u.$dynamicStudentId")
             }
             candidateUrls.add("$baseUrl/journal-student-grades-action")
 
-            for (targetUrl in candidateUrls) {
+            var candidateIndex = 0
+            while (candidateIndex < candidateUrls.size) {
+                val targetUrl = candidateUrls[candidateIndex]
+                candidateIndex++
+
                 val req = buildRequest(targetUrl, cookies, isJson = false)
                 val resp = client.newCall(req).execute()
                 val html = resp.body?.string() ?: continue
+                val responseLength = html.toByteArray(Charsets.UTF_8).size
+                val finalUrl = resp.request.url.toString()
+                Log.d(TAG, "<-- HTTP ${resp.code} from $targetUrl (final: $finalUrl, size: $responseLength bytes)")
 
                 checkSessionValidity(resp, html)
 
@@ -1397,16 +1467,39 @@ class EljurApiClient(
                     continue
                 }
 
+                // If dynamic student ID wasn't found before, check if this page reveals it
+                if (dynamicStudentId.isNullOrBlank()) {
+                    val discoveredId = extractDynamicStudentId(html)
+                    if (!discoveredId.isNullOrBlank()) {
+                        dynamicStudentId = discoveredId
+                        val specificUrl = "$baseUrl/journal-student-grades-action/u.$discoveredId"
+                        if (!candidateUrls.contains(specificUrl)) {
+                            candidateUrls.add(specificUrl)
+                        }
+                    }
+                }
+
                 // Check embedded JSON in script tags first
-                val scriptMarks = extractMarksFromHtmlScripts(html, studentId)
+                val scriptMarks = extractMarksFromHtmlScripts(html, dynamicStudentId)
                 if (scriptMarks.isNotEmpty()) {
+                    Log.d(TAG, "Successfully extracted ${scriptMarks.size} subjects from embedded script data")
                     return Result.success(scriptMarks)
                 }
 
                 val doc = Jsoup.parse(html)
                 val parsed = parseGradesHtml(doc)
                 if (parsed.isNotEmpty()) {
+                    Log.d(TAG, "Successfully parsed ${parsed.size} subjects from report card table")
                     return Result.success(parsed)
+                } else {
+                    val tables = doc.select("table")
+                    val tableInfo = tables.joinToString("; ") { tbl ->
+                        val id = tbl.id().ifBlank { "no-id" }
+                        val cls = tbl.className().ifBlank { "no-class" }
+                        val rows = tbl.select("tr").size
+                        "table[id=$id, class=$cls, rows=$rows]"
+                    }
+                    Log.w(TAG, "Grades table parser found 0 subjects at $finalUrl. Discovered tables: ${if (tableInfo.isBlank()) "none" else tableInfo}")
                 }
             }
 
@@ -1504,13 +1597,18 @@ class EljurApiClient(
             if (rows.isEmpty()) continue
 
             // 1. Column mapping via headers
-            val headerRows = rows.filter { r -> r.select("th").isNotEmpty() || r.children().any { it.tagName() == "th" } }
+            val headerRows = rows.filter { r ->
+                val parentTag = r.parent()?.tagName()?.lowercase()
+                parentTag == "thead" || (r.select("th").isNotEmpty() && r.select("td").isEmpty()) ||
+                r.className().contains("header", ignoreCase = true) || r.className().contains("thead", ignoreCase = true)
+            }
+            val firstHeaderRow = headerRows.firstOrNull() ?: rows.firstOrNull { r -> r.select("th").size > 1 }
             val colMapping = mutableMapOf<Int, ColumnMeta>()
 
-            if (headerRows.isNotEmpty()) {
-                val firstHeaderRow = headerRows.first()
+            if (firstHeaderRow != null) {
                 var currentColIdx = 0
-                for (th in firstHeaderRow.children()) {
+                val headerCells = firstHeaderRow.children().filter { it.tagName() == "th" || it.tagName() == "td" }
+                for (th in headerCells) {
                     val colspan = th.attr("colspan").toIntOrNull() ?: 1
                     val text = th.text().trim().lowercase()
                     val qIdx = when {
@@ -1534,24 +1632,29 @@ class EljurApiClient(
             }
 
             // 2. Data rows
-            val dataRows = rows.filter { r -> r.select("td").isNotEmpty() }
+            val dataRows = rows.filter { r ->
+                r != firstHeaderRow && r.parent()?.tagName()?.lowercase() != "thead" && r.select("td").isNotEmpty()
+            }
             for (row in dataRows) {
-                val cells = row.select("td")
-                if (cells.isEmpty()) continue
+                val rowCells = row.children().filter { it.tagName() == "td" || it.tagName() == "th" }
+                if (rowCells.isEmpty()) continue
 
-                val subjectCell = row.selectFirst(".subject, .lesson-name, .discipline, .subject-title, td.name") ?: cells.first()
+                val subjectCell = row.selectFirst(".subject, .lesson-name, .discipline, .subject-title, th[scope='row'], th.subject, td.subject, th.name, td.name")
+                    ?: rowCells.firstOrNull { it.tagName() == "th" }
+                    ?: rowCells.first()
                 val subjectName = subjectCell.text().trim()
                 if (subjectName.isBlank() ||
-                    subjectName.contains("Предмет", ignoreCase = true) ||
-                    subjectName.contains("Дисциплина", ignoreCase = true) ||
-                    subjectName.contains("ФИО", ignoreCase = true) ||
-                    subjectName.contains("Итого", ignoreCase = true) ||
-                    subjectName.length < 2
+                    subjectName.equals("Предмет", ignoreCase = true) ||
+                    subjectName.equals("Дисциплина", ignoreCase = true) ||
+                    subjectName.equals("ФИО", ignoreCase = true) ||
+                    subjectName.equals("Итого", ignoreCase = true) ||
+                    subjectName.length < 2 ||
+                    subjectName.toFloatOrNull() != null
                 ) {
                     continue
                 }
 
-                val subjectColIdx = cells.indexOf(subjectCell).takeIf { it >= 0 } ?: 0
+                val subjectColIdx = rowCells.indexOf(subjectCell).takeIf { it >= 0 } ?: 0
                 val quarters = Array(4) { QuarterData() }
                 var yearlyFinalMark: String? = null
                 var yearlyAverage: Float = 0f
@@ -1560,9 +1663,9 @@ class EljurApiClient(
 
                 if (colMapping.values.any { it.quarterIndex != null || it.isYear }) {
                     usedHeaderMapping = true
-                    for (cIdx in cells.indices) {
+                    for (cIdx in rowCells.indices) {
                         if (cIdx == subjectColIdx) continue
-                        val cell = cells[cIdx]
+                        val cell = rowCells[cIdx]
                         val meta = colMapping[cIdx] ?: continue
                         if (meta.quarterIndex != null && meta.quarterIndex in 0..3) {
                             val parsed = parseCellPeriodData(cell)
@@ -1580,8 +1683,9 @@ class EljurApiClient(
 
                 if (!usedHeaderMapping || quarters.all { it.marks.isEmpty() && it.average == 0f && it.finalMark == null }) {
                     var foundByClass = false
-                    for (cell in cells) {
-                        if (cell == subjectCell) continue
+                    val markCells = rowCells.filterIndexed { idx, _ -> idx != subjectColIdx }
+
+                    for (cell in markCells) {
                         val cClass = cell.className().lowercase()
                         val qIdx = when {
                             cClass.contains("q1") || cClass.contains("period-1") || cClass.contains("quarter-1") || cell.attr("data-period") == "1" -> 0
@@ -1605,24 +1709,23 @@ class EljurApiClient(
                     }
 
                     if (!foundByClass) {
-                        val otherCells = cells.filter { it != subjectCell }
-                        if (otherCells.size in 4..6) {
-                            for (i in 0 until minOf(4, otherCells.size)) {
-                                val parsed = parseCellPeriodData(otherCells[i])
+                        if (markCells.size in 4..6) {
+                            for (i in 0 until minOf(4, markCells.size)) {
+                                val parsed = parseCellPeriodData(markCells[i])
                                 val qData = quarters[i]
                                 qData.marks.addAll(parsed.marks)
                                 if (parsed.average > 0f) qData.average = parsed.average
                                 if (!parsed.finalMark.isNullOrBlank()) qData.finalMark = parsed.finalMark
                             }
-                            if (otherCells.size >= 5) {
-                                val yearCell = otherCells.last()
+                            if (markCells.size >= 5) {
+                                val yearCell = markCells.last()
                                 val parsed = parseCellPeriodData(yearCell)
                                 if (parsed.average > 0f) yearlyAverage = parsed.average
                                 if (!parsed.finalMark.isNullOrBlank()) yearlyFinalMark = parsed.finalMark
                             }
                         } else {
                             val allRowMarks = mutableListOf<Mark>()
-                            for (cell in otherCells) {
+                            for (cell in markCells) {
                                 allRowMarks.addAll(parseCellPeriodData(cell).marks)
                             }
                             if (allRowMarks.isNotEmpty()) {
@@ -1675,13 +1778,35 @@ class EljurApiClient(
                 val allSubjectMarks = quarters.flatMap { it.marks }
 
                 if (allSubjectMarks.isNotEmpty() || yearlyAverage > 0f || yearlyFinalMark != null) {
-                    subjectMap[subjectName] = SubjectSummary(
-                        subject = subjectName,
-                        average = yearlyAverage,
-                        marks = allSubjectMarks,
-                        finalMark = yearlyFinalMark,
-                        periodMarks = periodMarksList
-                    )
+                    val existing = subjectMap[subjectName]
+                    if (existing != null) {
+                        val mergedPeriods = (0..3).map { q ->
+                            val oldP = existing.periodMarks.getOrNull(q)
+                            val newP = periodMarksList[q]
+                            val mergedMarks = ((oldP?.marks ?: emptyList()) + newP.marks).distinctBy { "${it.date}_${it.value}_${it.weight}" }
+                            val avg = if (newP.average > 0f) newP.average else oldP?.average ?: 0f
+                            val fin = newP.finalMark ?: oldP?.finalMark
+                            PeriodMarks("${q + 1}", "${q + 1} четверть", mergedMarks, avg, fin)
+                        }
+                        val allMergedMarks = mergedPeriods.flatMap { it.marks }
+                        val yAvg = if (yearlyAverage > 0f) yearlyAverage else existing.average
+                        val yFin = yearlyFinalMark ?: existing.finalMark
+                        subjectMap[subjectName] = SubjectSummary(
+                            subject = subjectName,
+                            average = yAvg,
+                            marks = allMergedMarks,
+                            finalMark = yFin,
+                            periodMarks = mergedPeriods
+                        )
+                    } else {
+                        subjectMap[subjectName] = SubjectSummary(
+                            subject = subjectName,
+                            average = yearlyAverage,
+                            marks = allSubjectMarks,
+                            finalMark = yearlyFinalMark,
+                            periodMarks = periodMarksList
+                        )
+                    }
                 }
             }
         }
