@@ -30,6 +30,7 @@ import androidx.compose.material.icons.rounded.Grade
 import androidx.compose.material.icons.rounded.MeetingRoom
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Today
+import androidx.compose.material3.Badge
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -174,16 +175,16 @@ fun ScheduleScreen(
                 }
 
                 Surface(
-                    shape = RoundedCornerShape(12.dp),
+                    shape = RoundedCornerShape(14.dp),
                     color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHighest,
                     modifier = Modifier
-                        .height(38.dp)
+                        .height(48.dp)
                         .clickable { onSelectDay(index) }
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         Text(
                             text = shortDay,
@@ -193,9 +194,27 @@ fun ScheduleScreen(
                         )
                         Text(
                             text = day.date.take(5),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = if (isSelected) MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f) else MaterialTheme.colorScheme.onSurfaceVariant
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
                         )
+                        if (day.lessons.isNotEmpty()) {
+                            Badge(
+                                containerColor = if (isSelected)
+                                    MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.25f)
+                                else
+                                    MaterialTheme.colorScheme.surfaceVariant,
+                                contentColor = if (isSelected)
+                                    MaterialTheme.colorScheme.onPrimary
+                                else
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                            ) {
+                                Text(
+                                    text = "${day.lessons.size}",
+                                    style = MaterialTheme.typography.labelSmall
+                                )
+                            }
+                        }
                     }
                 }
             }

@@ -417,14 +417,28 @@ class EljurApiClient(
                     schoolTitle = "ГИС РК «Образование»"
                 )
                 val enriched = enrichWithRules(baseSession, cookies)
-                if (enriched.studentId.isNotBlank() || enriched.userTitle != "Ученик") {
+                if (enriched.userTitle.isNotBlank() && enriched.userTitle != "Ученик" &&
+                    enriched.schoolTitle.isNotBlank() && enriched.schoolTitle != "ГИС РК «Образование»") {
                     return@withContext Result.success(enriched)
                 }
 
-                // Scrape profile info from /journal-app
+                // Scrape profile info from https://edu.rk.gov.ru/?show=home and /journal-app
                 val profileResult = scrapeUserProfile(cookies)
-                val finalName = profileResult.first.ifBlank { fallbackUserName ?: "Ученик" }
-                val finalSchool = profileResult.second.ifBlank { "ГИС РК «Образование»" }
+                val finalName = if (enriched.userTitle.isNotBlank() && enriched.userTitle != "Ученик") {
+                    enriched.userTitle
+                } else if (profileResult.first.isNotBlank()) {
+                    profileResult.first
+                } else {
+                    fallbackUserName ?: "Ученик"
+                }
+
+                val finalSchool = if (enriched.schoolTitle.isNotBlank() && enriched.schoolTitle != "ГИС РК «Образование»") {
+                    enriched.schoolTitle
+                } else if (profileResult.second.isNotBlank()) {
+                    profileResult.second
+                } else {
+                    "Республика Крым"
+                }
 
                 val rawSession = enriched.copy(
                     userTitle = finalName,
@@ -439,18 +453,52 @@ class EljurApiClient(
         }
     }
 
-    private fun scrapeUserProfile(cookies: String): Pair<String, String> {
-        return try {
-            val req = buildRequest("$baseUrl/journal-app", cookies, isJson = false)
-            val resp = client.newCall(req).execute()
-            val html = resp.body?.string() ?: return "" to ""
-            val doc = Jsoup.parse(html)
-            val name = doc.selectFirst(".user-name, .b-dropdown__user, .header-user__name, .m-user__name, .user_name, .user-profile__name")?.text()?.trim() ?: ""
-            val school = doc.selectFirst(".school-title, .header-school__title, .m-logo__subtitle, .school_title")?.text()?.trim() ?: "Республика Крым"
-            name to school
-        } catch (_: Exception) {
-            "" to ""
+    fun scrapeUserProfile(cookies: String?): Pair<String, String> {
+        if (cookies.isNullOrBlank()) return "" to ""
+        val candidateUrls = listOf(
+            "$baseUrl/?show=home",
+            "$baseUrl/journal-app",
+            baseUrl
+        )
+        var scrapedName = ""
+        var scrapedSchool = ""
+
+        for (url in candidateUrls) {
+            if (scrapedName.isNotBlank() && scrapedSchool.isNotBlank()) break
+            try {
+                val req = buildRequest(url, cookies, isJson = false)
+                val resp = client.newCall(req).execute()
+                val html = resp.body?.string() ?: continue
+                val doc = Jsoup.parse(html)
+
+                if (scrapedName.isBlank()) {
+                    val nameElem = doc.selectFirst(
+                        ".user-name, .b-dropdown__user, .header-user__name, .m-user__name, " +
+                        ".user_name, .user-profile__name, .user-info__name, .profile-name, " +
+                        ".student-name, .b-header__user, .user__name, .h-user, .user-title, " +
+                        "div.user-info .name, span.user-name, a.b-dropdown__user"
+                    )
+                    val rawName = nameElem?.text()?.trim()
+                    if (!rawName.isNullOrBlank() && rawName != "Ученик" && rawName != "Вход" && rawName.length >= 2) {
+                        scrapedName = rawName
+                    }
+                }
+
+                if (scrapedSchool.isBlank()) {
+                    val schoolElem = doc.selectFirst(
+                        ".school-title, .header-school__title, .m-logo__subtitle, .school_title, " +
+                        ".school-name, .b-dropdown__school, .b-school__title, .school, " +
+                        ".school__title, .school__name, div.school-info"
+                    )
+                    val rawSchool = schoolElem?.text()?.trim()
+                    if (!rawSchool.isNullOrBlank() && rawSchool != "Республика Крым" && rawSchool != "ГИС РК «Образование»" && rawSchool.length >= 3) {
+                        scrapedSchool = rawSchool
+                    }
+                }
+            } catch (_: Exception) {}
         }
+
+        return scrapedName to scrapedSchool
     }
 
     fun getCurrentWeekRange(date: Date = Date()): String {
@@ -1729,18 +1777,24 @@ class EljurApiClient(
             val targetDate = getMondayDateForOffset(weekOffset)
 
             val candidateUrls = mutableListOf<String>()
-            val mainUrl = if (weekOffset == 0) "$baseUrl/journal-app" else "$baseUrl/journal-app/week.$weekOffset"
+            val weekUrl = "$baseUrl/journal-app/week.$weekOffset"
+            val fallbackUrl = if (weekOffset == 0) "$baseUrl/journal-app" else null
 
             if (!cleanStudent.isNullOrBlank()) {
-                candidateUrls.add("$mainUrl/u.$cleanStudent")
+                candidateUrls.add("$weekUrl/u.$cleanStudent")
+                if (fallbackUrl != null) candidateUrls.add("$fallbackUrl/u.$cleanStudent")
             }
-            candidateUrls.add(mainUrl)
+            candidateUrls.add(weekUrl)
+            if (fallbackUrl != null) candidateUrls.add(fallbackUrl)
 
-            val diaryActionUrl = if (weekOffset == 0) "$baseUrl/journal-student-diary-action" else "$baseUrl/journal-student-diary-action/week.$weekOffset"
+            val diaryActionWeekUrl = "$baseUrl/journal-student-diary-action/week.$weekOffset"
+            val diaryActionFallbackUrl = if (weekOffset == 0) "$baseUrl/journal-student-diary-action" else null
             if (!cleanStudent.isNullOrBlank()) {
-                candidateUrls.add("$diaryActionUrl/u.$cleanStudent")
+                candidateUrls.add("$diaryActionWeekUrl/u.$cleanStudent")
+                if (diaryActionFallbackUrl != null) candidateUrls.add("$diaryActionFallbackUrl/u.$cleanStudent")
             }
-            candidateUrls.add(diaryActionUrl)
+            candidateUrls.add(diaryActionWeekUrl)
+            if (diaryActionFallbackUrl != null) candidateUrls.add(diaryActionFallbackUrl)
             candidateUrls.add("$baseUrl/journal-app?date=$targetDate")
 
             for (targetUrl in candidateUrls) {
@@ -1974,69 +2028,97 @@ object AttachmentExtractor {
         val attachments = mutableListOf<Attachment>()
         val seenUrls = mutableSetOf<String>()
 
+        fun normalizeUrl(rawUrl: String): String {
+            var url = rawUrl.trim()
+            if (url.startsWith("/")) {
+                url = "$BASE_URL$url"
+            } else if (url.startsWith("http://edu.rk.gov.ru")) {
+                url = "https://edu.rk.gov.ru" + url.removePrefix("http://edu.rk.gov.ru")
+            }
+            return url
+        }
+
+        fun isFileUrl(url: String): Boolean {
+            return url.contains("/storage/") ||
+                    url.contains("/files/") ||
+                    url.contains("/download") ||
+                    url.endsWith(".pdf", true) ||
+                    url.endsWith(".doc", true) ||
+                    url.endsWith(".docx", true) ||
+                    url.endsWith(".xls", true) ||
+                    url.endsWith(".xlsx", true) ||
+                    url.endsWith(".ppt", true) ||
+                    url.endsWith(".pptx", true) ||
+                    url.endsWith(".zip", true)
+        }
+
+        fun extractTitle(text: String, url: String, isFile: Boolean): String {
+            if (text.isNotBlank() && !text.startsWith("http") && !text.startsWith("/")) {
+                return text
+            }
+            if (isFile) {
+                val rawFilename = url.substringAfterLast('/').substringBefore('?')
+                return try {
+                    java.net.URLDecoder.decode(rawFilename, "UTF-8").ifBlank { "Файл к уроку" }
+                } catch (_: Exception) {
+                    rawFilename.ifBlank { "Файл к уроку" }
+                }
+            }
+            return extractDomain(url)
+        }
+
+        var cleanText: String = rawHtmlOrText.trim()
+
         if (rawHtmlOrText.contains("<") && rawHtmlOrText.contains(">")) {
             try {
                 val doc = Jsoup.parseBodyFragment(rawHtmlOrText)
-                for (a in doc.select("a[href]")) {
-                    var href = a.attr("href").trim()
-                    val text = a.text().trim()
-                    if (href.startsWith("/storage/")) {
-                        href = "$BASE_URL$href"
-                    }
+                val links = doc.select("a[href]")
+                for (a in links) {
+                    val href = normalizeUrl(a.attr("href"))
+                    val linkText = a.text().trim()
                     if (href.isNotBlank() && !seenUrls.contains(href)) {
                         seenUrls.add(href)
-                        val isFile = href.contains("/storage/") ||
-                                href.contains("/files/") ||
-                                href.contains("/download") ||
-                                href.endsWith(".pdf", true) ||
-                                href.endsWith(".doc", true) ||
-                                href.endsWith(".docx", true) ||
-                                href.endsWith(".xls", true) ||
-                                href.endsWith(".xlsx", true) ||
-                                href.endsWith(".ppt", true) ||
-                                href.endsWith(".pptx", true) ||
-                                href.endsWith(".zip", true)
+                        val isFile = isFileUrl(href)
                         val type = if (isFile) AttachmentType.FILE else AttachmentType.LINK
-                        val title = if (text.isNotBlank() && !text.startsWith("http")) {
-                            text
-                        } else if (isFile) {
-                            href.substringAfterLast('/').substringBefore('?').ifBlank { "Файл к уроку" }
-                        } else {
-                            extractDomain(href)
-                        }
+                        val title = extractTitle(linkText, href, isFile)
                         attachments.add(Attachment(title = title, url = href, type = type))
                     }
                 }
-            } catch (_: Exception) {}
-        }
 
-        for (match in URL_REGEX.findAll(rawHtmlOrText)) {
-            val url = match.value.trimEnd('.', ',', ';', ')')
-            if (!seenUrls.contains(url)) {
-                seenUrls.add(url)
-                val isFile = url.contains("/storage/") ||
-                        url.contains("/files/") ||
-                        url.endsWith(".pdf", true) ||
-                        url.endsWith(".docx", true) ||
-                        url.endsWith(".doc", true) ||
-                        url.endsWith(".zip", true)
-                val type = if (isFile) AttachmentType.FILE else AttachmentType.LINK
-                val title = if (isFile) {
-                    url.substringAfterLast('/').substringBefore('?').ifBlank { "Файл к уроку" }
-                } else {
-                    extractDomain(url)
+                // Remove <a> tags to prevent duplicate regex matching of the same URLs from tags/attributes
+                doc.select("a").remove()
+                val remainingText = doc.text().trim()
+                cleanText = Jsoup.parseBodyFragment(rawHtmlOrText).text().trim()
+
+                // Scan remaining text for any standalone plaintext URLs
+                for (match in URL_REGEX.findAll(remainingText)) {
+                    val plainUrl = normalizeUrl(match.value.trimEnd('.', ',', ';', ')'))
+                    if (plainUrl.isNotBlank() && !seenUrls.contains(plainUrl)) {
+                        seenUrls.add(plainUrl)
+                        val isFile = isFileUrl(plainUrl)
+                        val type = if (isFile) AttachmentType.FILE else AttachmentType.LINK
+                        val title = extractTitle("", plainUrl, isFile)
+                        attachments.add(Attachment(title = title, url = plainUrl, type = type))
+                    }
                 }
-                attachments.add(Attachment(title = title, url = url, type = type))
+            } catch (_: Exception) {
+                cleanText = rawHtmlOrText.trim()
+            }
+        } else {
+            for (match in URL_REGEX.findAll(rawHtmlOrText)) {
+                val plainUrl = normalizeUrl(match.value.trimEnd('.', ',', ';', ')'))
+                if (plainUrl.isNotBlank() && !seenUrls.contains(plainUrl)) {
+                    seenUrls.add(plainUrl)
+                    val isFile = isFileUrl(plainUrl)
+                    val type = if (isFile) AttachmentType.FILE else AttachmentType.LINK
+                    val title = extractTitle("", plainUrl, isFile)
+                    attachments.add(Attachment(title = title, url = plainUrl, type = type))
+                }
             }
         }
 
-        val clean = if (rawHtmlOrText.contains("<") && rawHtmlOrText.contains(">")) {
-            Jsoup.parseBodyFragment(rawHtmlOrText).text().trim()
-        } else {
-            rawHtmlOrText.trim()
-        }
-
-        return (clean.ifBlank { null }) to attachments
+        val distinctAttachments = attachments.distinctBy { it.url }
+        return (cleanText.ifBlank { null }) to distinctAttachments
     }
 
     private fun extractDomain(url: String): String {

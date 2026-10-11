@@ -48,6 +48,35 @@ class DiaryRepository(
         _session.value = null
     }
 
+    suspend fun ensureProfileLoaded() {
+        val currentSession = _session.value ?: return
+        if (currentSession.isDemo) return
+        val cookies = sessionStore.getCookies()
+        if (cookies.isNullOrBlank()) return
+
+        if (currentSession.userTitle.isBlank() ||
+            currentSession.userTitle == "Ученик" ||
+            currentSession.schoolTitle.isBlank() ||
+            currentSession.schoolTitle == "ГИС РК «Образование»" ||
+            currentSession.schoolTitle == "Республика Крым"
+        ) {
+            try {
+                val (name, school) = apiClient.scrapeUserProfile(cookies)
+                var updated = currentSession
+                if (name.isNotBlank() && name != "Ученик") {
+                    updated = updated.copy(userTitle = name)
+                }
+                if (school.isNotBlank() && school != "ГИС РК «Образование»" && school != "Республика Крым") {
+                    updated = updated.copy(schoolTitle = school)
+                }
+                if (updated != currentSession) {
+                    sessionStore.saveSession(updated, cookies)
+                    _session.value = updated
+                }
+            } catch (_: Exception) {}
+        }
+    }
+
     suspend fun getPeriods(): List<AcademicPeriod> {
         val currentSession = _session.value ?: return emptyList()
         if (currentSession.isDemo) {

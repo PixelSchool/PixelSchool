@@ -71,6 +71,11 @@ class MainViewModel(
             _errorMessage.value = null
             var errorToDisplay: String? = null
 
+            // Restore/verify student profile (name and school) if not fully loaded
+            try {
+                repository.ensureProfileLoaded()
+            } catch (_: Exception) {}
+
             try {
                 _schedule.value = repository.getSchedule(_currentWeekOffset.value)
                 _homework.value = repository.getHomework(_currentWeekOffset.value)
