@@ -49,7 +49,7 @@ class DiaryRepository(
     }
 
     suspend fun getPeriods(): List<AcademicPeriod> {
-        val currentSession = _session.value ?: return MockDataProvider.getAcademicPeriods()
+        val currentSession = _session.value ?: return emptyList()
         if (currentSession.isDemo) {
             return MockDataProvider.getAcademicPeriods()
         }
@@ -74,7 +74,8 @@ class DiaryRepository(
     }
 
     suspend fun getSchedule(weekOffset: Int = 0): List<DaySchedule> {
-        val currentSession = _session.value ?: return MockDataProvider.getWeekSchedule()
+        val currentSession = _session.value
+            ?: throw IllegalStateException("Сессия не найдена. Требуется авторизация.")
         if (currentSession.isDemo) {
             return MockDataProvider.getWeekSchedule()
         }
@@ -108,7 +109,8 @@ class DiaryRepository(
     }
 
     suspend fun getHomework(weekOffset: Int = 0): List<Homework> {
-        val currentSession = _session.value ?: return MockDataProvider.getHomeworkList()
+        val currentSession = _session.value
+            ?: throw IllegalStateException("Сессия не найдена. Требуется авторизация.")
         if (currentSession.isDemo) {
             return MockDataProvider.getHomeworkList()
         }
@@ -135,7 +137,8 @@ class DiaryRepository(
     }
 
     suspend fun getMarks(days: String? = null): List<SubjectSummary> {
-        val currentSession = _session.value ?: return MockDataProvider.getSubjectsSummary()
+        val currentSession = _session.value
+            ?: throw IllegalStateException("Сессия не найдена. Требуется авторизация.")
         if (currentSession.isDemo) {
             return MockDataProvider.getSubjectsSummary()
         }
@@ -203,6 +206,11 @@ class DiaryRepository(
             if (webMarks.isSuccess && webMarks.getOrNull()?.isNotEmpty() == true) {
                 return webMarks.getOrThrow()
             }
+        }
+
+        if (marksResult.isFailure) {
+            throw marksResult.exceptionOrNull()
+                ?: Exception("Не удалось загрузить оценки из региональной системы")
         }
 
         return emptyList()

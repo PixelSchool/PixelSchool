@@ -48,25 +48,36 @@ class MainViewModel(
     val marks: StateFlow<List<SubjectSummary>> = _marks.asStateFlow()
 
     init {
-        loadData()
+        if (session.value != null) {
+            loadData()
+        }
     }
 
     fun loadData() {
         viewModelScope.launch {
+            val curSession = session.value
+            if (curSession == null) {
+                _schedule.value = emptyList()
+                _homework.value = emptyList()
+                _marks.value = emptyList()
+                _periods.value = emptyList()
+                _isLoading.value = false
+                return@launch
+            }
+
             _isLoading.value = true
             _errorMessage.value = null
             var errorToDisplay: String? = null
 
             try {
                 _schedule.value = repository.getSchedule(_currentWeekOffset.value)
-            } catch (e: Exception) {
-                errorToDisplay = e.message
-            }
-
-            try {
                 _homework.value = repository.getHomework(_currentWeekOffset.value)
             } catch (e: Exception) {
-                if (errorToDisplay == null) errorToDisplay = e.message
+                if (!curSession.isDemo) {
+                    _schedule.value = emptyList()
+                    _homework.value = emptyList()
+                }
+                errorToDisplay = e.message ?: "Не удалось загрузить дневник из региональной системы"
             }
 
             try {
@@ -78,14 +89,15 @@ class MainViewModel(
                 val activeRange = resolvedPeriods.getOrNull(activeIdx)?.rangeDays
                 _marks.value = repository.getMarks(activeRange)
             } catch (e: Exception) {
-                if (errorToDisplay == null) errorToDisplay = e.message
+                if (!curSession.isDemo) {
+                    _marks.value = emptyList()
+                }
+                if (errorToDisplay == null) {
+                    errorToDisplay = e.message ?: "Не удалось загрузить оценки"
+                }
             }
 
-            if (_schedule.value.isEmpty() && _homework.value.isEmpty() && _marks.value.isEmpty()) {
-                _errorMessage.value = errorToDisplay ?: "Не удалось загрузить данные из региональной системы"
-            } else {
-                _errorMessage.value = null
-            }
+            _errorMessage.value = errorToDisplay
             _isLoading.value = false
         }
     }
@@ -101,12 +113,18 @@ class MainViewModel(
         _currentWeekOffset.value = newOffset
         _selectedDayIndex.value = 0
         viewModelScope.launch {
+            val curSession = session.value ?: return@launch
             _isLoading.value = true
+            _errorMessage.value = null
             try {
                 _schedule.value = repository.getSchedule(newOffset)
                 _homework.value = repository.getHomework(newOffset)
             } catch (e: Exception) {
-                _errorMessage.value = e.message
+                if (!curSession.isDemo) {
+                    _schedule.value = emptyList()
+                    _homework.value = emptyList()
+                }
+                _errorMessage.value = e.message ?: "Не удалось загрузить расписание"
             } finally {
                 _isLoading.value = false
             }
@@ -117,12 +135,17 @@ class MainViewModel(
         if (index in 0 until _periods.value.size) {
             _selectedPeriodIndex.value = index
             viewModelScope.launch {
+                val curSession = session.value ?: return@launch
                 _isLoading.value = true
+                _errorMessage.value = null
                 try {
                     val p = _periods.value[index]
                     _marks.value = repository.getMarks(p.rangeDays)
                 } catch (e: Exception) {
-                    _errorMessage.value = e.message
+                    if (!curSession.isDemo) {
+                        _marks.value = emptyList()
+                    }
+                    _errorMessage.value = e.message ?: "Не удалось загрузить оценки"
                 } finally {
                     _isLoading.value = false
                 }
@@ -145,6 +168,11 @@ class MainViewModel(
         viewModelScope.launch {
             _isLoading.value = true
             _errorMessage.value = null
+            _schedule.value = emptyList()
+            _homework.value = emptyList()
+            _marks.value = emptyList()
+            _periods.value = emptyList()
+
             val res = repository.loginWithSession(auth, cookies, userName)
             if (res.isSuccess) {
                 loadData()
