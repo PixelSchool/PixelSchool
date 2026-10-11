@@ -16,6 +16,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material3.Card
@@ -49,6 +50,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.pixelschool.app.data.model.AcademicPeriod
+import com.pixelschool.app.data.model.Mark
 import com.pixelschool.app.data.model.PeriodMarks
 import com.pixelschool.app.data.model.SubjectSummary
 import com.pixelschool.app.ui.components.ExpressiveGradeBadge
@@ -64,7 +66,7 @@ fun MarksScreen(
     modifier: Modifier = Modifier
 ) {
     var selectedSubject by remember { mutableStateOf<SubjectSummary?>(null) }
-    val sheetState = rememberModalBottomSheetState()
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     val periodTitles = remember(periods) {
         if (periods.isNotEmpty()) {
@@ -89,14 +91,31 @@ fun MarksScreen(
 
     val displayedSubjects = remember(subjects, selectedTabIndex, isYearTab) {
         if (isYearTab) {
-            subjects
+            subjects.map { s ->
+                s.copy(
+                    marks = s.marks.sortedNewestFirst(),
+                    periodMarks = s.periodMarks.map { pm ->
+                        pm.copy(marks = pm.marks.sortedNewestFirst())
+                    }
+                )
+            }
         } else {
             subjects.map { s ->
                 if (s.periodMarks.isNotEmpty() && selectedTabIndex < s.periodMarks.size) {
                     val pm = s.periodMarks[selectedTabIndex]
-                    s.copy(average = pm.average, marks = pm.marks, finalMark = pm.finalMark)
+                    s.copy(
+                        average = pm.average,
+                        marks = pm.marks.sortedNewestFirst(),
+                        finalMark = pm.finalMark,
+                        periodMarks = s.periodMarks.map { it.copy(marks = it.marks.sortedNewestFirst()) }
+                    )
                 } else {
-                    s.copy(average = 0f, marks = emptyList(), finalMark = null)
+                    s.copy(
+                        average = 0f,
+                        marks = emptyList(),
+                        finalMark = null,
+                        periodMarks = s.periodMarks.map { it.copy(marks = it.marks.sortedNewestFirst()) }
+                    )
                 }
             }
         }
@@ -288,7 +307,9 @@ fun MarksScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(24.dp)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 24.dp)
+                    .padding(top = 8.dp, bottom = 48.dp)
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -400,12 +421,16 @@ fun MarksScreen(
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Row(
+                                        modifier = Modifier.weight(1f),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
                                         ExpressiveGradeBadge(value = mark.value)
                                         Spacer(modifier = Modifier.width(12.dp))
-                                        Column {
+                                        Column(modifier = Modifier.weight(1f, fill = false)) {
                                             Text(
-                                                text = mark.comment ?: if (mark.isControl) "Контрольная работа" else "Ответ на уроке",
+                                                text = mark.comment?.takeIf { it.isNotBlank() }
+                                                    ?: if (mark.isControl) "Контрольная работа" else "Ответ на уроке",
                                                 style = MaterialTheme.typography.bodyMedium,
                                                 fontWeight = FontWeight.Medium
                                             )
@@ -418,11 +443,14 @@ fun MarksScreen(
                                             }
                                         }
                                     }
-                                    Text(
-                                        text = mark.date,
-                                        style = MaterialTheme.typography.labelMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
+                                    if (mark.date.isNotBlank()) {
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = mark.date,
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -683,4 +711,23 @@ fun GradesTabRow(
             )
         }
     }
+}
+
+private fun parseAcademicDateWeight(dateStr: String): Int {
+    val clean = dateStr.trim().replace("-", "").replace("/", ".")
+    val parts = clean.split(".")
+    if (parts.size >= 2) {
+        val day = parts[0].toIntOrNull() ?: 0
+        val month = parts[1].toIntOrNull() ?: 0
+        if (month in 1..12) {
+            val academicMonth = if (month >= 8) month else month + 12
+            return academicMonth * 100 + day
+        }
+    }
+    return 0
+}
+
+private fun List<Mark>.sortedNewestFirst(): List<Mark> {
+    if (size <= 1) return this
+    return this.reversed().sortedByDescending { parseAcademicDateWeight(it.date) }
 }
