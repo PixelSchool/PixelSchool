@@ -10,19 +10,36 @@
     android:paddingRight="14dp"
     android:paddingBottom="12dp">
 
-    <!-- Header -->
+    <!-- Header with Day Navigation & Flipping -->
     <LinearLayout
+        android:id="@+id/widget_header"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:gravity="center_vertical">
 
+        <!-- Prev Day Button -->
+        <TextView
+            android:id="@+id/widget_btn_prev_day"
+            android:layout_width="26dp"
+            android:layout_height="26dp"
+            android:gravity="center"
+            android:text="‹"
+            android:textColor="#D0BCFF"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:background="@drawable/widget_pill_bg" />
+
+        <!-- Day Title & Date (Click resets to Today) -->
         <LinearLayout
+            android:id="@+id/widget_header_center"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:orientation="horizontal"
-            android:gravity="center_vertical">
+            android:gravity="center_vertical"
+            android:layout_marginLeft="8dp"
+            android:layout_marginRight="6dp">
 
             <TextView
                 android:id="@+id/widget_header_day"
@@ -30,7 +47,7 @@
                 android:layout_height="wrap_content"
                 android:text="Сегодня"
                 android:textColor="#F2EFF4"
-                android:textSize="14sp"
+                android:textSize="13sp"
                 android:textStyle="bold" />
 
             <TextView
@@ -40,9 +57,23 @@
                 android:layout_marginLeft="6dp"
                 android:text=""
                 android:textColor="#938F99"
-                android:textSize="12sp" />
+                android:textSize="11sp" />
         </LinearLayout>
 
+        <!-- Next Day Button -->
+        <TextView
+            android:id="@+id/widget_btn_next_day"
+            android:layout_width="26dp"
+            android:layout_height="26dp"
+            android:gravity="center"
+            android:text="›"
+            android:textColor="#D0BCFF"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:background="@drawable/widget_pill_bg"
+            android:layout_marginRight="6dp" />
+
+        <!-- Count / App badge -->
         <TextView
             android:id="@+id/widget_header_badge"
             android:layout_width="wrap_content"
@@ -63,7 +94,7 @@
         android:layout_width="match_parent"
         android:layout_height="1dp"
         android:layout_marginTop="8dp"
-        android:layout_marginBottom="6dp"
+        android:layout_marginBottom="4dp"
         android:background="#282A34" />
 
     <!-- Empty State -->
@@ -79,295 +110,14 @@
         android:textSize="13sp"
         android:visibility="gone" />
 
-    <!-- Lessons List (up to 5 rows) -->
-    <LinearLayout
-        android:id="@+id/widget_lessons_container"
+    <!-- Scrollable ListView of Lessons -->
+    <ListView
+        android:id="@+id/widget_lessons_list"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical">
-
-        <!-- Row 1 -->
-        <LinearLayout
-            android:id="@+id/widget_row_1"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:paddingTop="3dp"
-            android:paddingBottom="3dp"
-            android:visibility="gone">
-
-            <TextView
-                android:id="@+id/widget_time_1"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:background="@drawable/widget_pill_bg"
-                android:text="1 • 08:30"
-                android:textColor="#D0BCFF"
-                android:textSize="10sp"
-                android:textStyle="bold"
-                android:paddingLeft="6dp"
-                android:paddingTop="2dp"
-                android:paddingRight="6dp"
-                android:paddingBottom="2dp" />
-
-            <TextView
-                android:id="@+id/widget_subject_1"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginLeft="8dp"
-                android:layout_marginRight="6dp"
-                android:ellipsize="end"
-                android:maxLines="1"
-                android:text="Алгебра"
-                android:textColor="#F2EFF4"
-                android:textSize="12sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:id="@+id/widget_room_1"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:background="@drawable/widget_room_badge_bg"
-                android:text="каб. 24"
-                android:textColor="#CAC4D0"
-                android:textSize="10sp"
-                android:paddingLeft="5dp"
-                android:paddingTop="1dp"
-                android:paddingRight="5dp"
-                android:paddingBottom="1dp"
-                android:visibility="gone" />
-        </LinearLayout>
-
-        <!-- Row 2 -->
-        <LinearLayout
-            android:id="@+id/widget_row_2"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:paddingTop="3dp"
-            android:paddingBottom="3dp"
-            android:visibility="gone">
-
-            <TextView
-                android:id="@+id/widget_time_2"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:background="@drawable/widget_pill_bg"
-                android:text="2 • 09:25"
-                android:textColor="#D0BCFF"
-                android:textSize="10sp"
-                android:textStyle="bold"
-                android:paddingLeft="6dp"
-                android:paddingTop="2dp"
-                android:paddingRight="6dp"
-                android:paddingBottom="2dp" />
-
-            <TextView
-                android:id="@+id/widget_subject_2"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginLeft="8dp"
-                android:layout_marginRight="6dp"
-                android:ellipsize="end"
-                android:maxLines="1"
-                android:text="Русский язык"
-                android:textColor="#F2EFF4"
-                android:textSize="12sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:id="@+id/widget_room_2"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:background="@drawable/widget_room_badge_bg"
-                android:text="каб. 18"
-                android:textColor="#CAC4D0"
-                android:textSize="10sp"
-                android:paddingLeft="5dp"
-                android:paddingTop="1dp"
-                android:paddingRight="5dp"
-                android:paddingBottom="1dp"
-                android:visibility="gone" />
-        </LinearLayout>
-
-        <!-- Row 3 -->
-        <LinearLayout
-            android:id="@+id/widget_row_3"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:paddingTop="3dp"
-            android:paddingBottom="3dp"
-            android:visibility="gone">
-
-            <TextView
-                android:id="@+id/widget_time_3"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:background="@drawable/widget_pill_bg"
-                android:text="3 • 10:30"
-                android:textColor="#D0BCFF"
-                android:textSize="10sp"
-                android:textStyle="bold"
-                android:paddingLeft="6dp"
-                android:paddingTop="2dp"
-                android:paddingRight="6dp"
-                android:paddingBottom="2dp" />
-
-            <TextView
-                android:id="@+id/widget_subject_3"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginLeft="8dp"
-                android:layout_marginRight="6dp"
-                android:ellipsize="end"
-                android:maxLines="1"
-                android:text="Литература"
-                android:textColor="#F2EFF4"
-                android:textSize="12sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:id="@+id/widget_room_3"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:background="@drawable/widget_room_badge_bg"
-                android:text="каб. 18"
-                android:textColor="#CAC4D0"
-                android:textSize="10sp"
-                android:paddingLeft="5dp"
-                android:paddingTop="1dp"
-                android:paddingRight="5dp"
-                android:paddingBottom="1dp"
-                android:visibility="gone" />
-        </LinearLayout>
-
-        <!-- Row 4 -->
-        <LinearLayout
-            android:id="@+id/widget_row_4"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:paddingTop="3dp"
-            android:paddingBottom="3dp"
-            android:visibility="gone">
-
-            <TextView
-                android:id="@+id/widget_time_4"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:background="@drawable/widget_pill_bg"
-                android:text="4 • 11:35"
-                android:textColor="#D0BCFF"
-                android:textSize="10sp"
-                android:textStyle="bold"
-                android:paddingLeft="6dp"
-                android:paddingTop="2dp"
-                android:paddingRight="6dp"
-                android:paddingBottom="2dp" />
-
-            <TextView
-                android:id="@+id/widget_subject_4"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginLeft="8dp"
-                android:layout_marginRight="6dp"
-                android:ellipsize="end"
-                android:maxLines="1"
-                android:text="Химия"
-                android:textColor="#F2EFF4"
-                android:textSize="12sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:id="@+id/widget_room_4"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:background="@drawable/widget_room_badge_bg"
-                android:text="каб. 29"
-                android:textColor="#CAC4D0"
-                android:textSize="10sp"
-                android:paddingLeft="5dp"
-                android:paddingTop="1dp"
-                android:paddingRight="5dp"
-                android:paddingBottom="1dp"
-                android:visibility="gone" />
-        </LinearLayout>
-
-        <!-- Row 5 -->
-        <LinearLayout
-            android:id="@+id/widget_row_5"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:paddingTop="3dp"
-            android:paddingBottom="3dp"
-            android:visibility="gone">
-
-            <TextView
-                android:id="@+id/widget_time_5"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:background="@drawable/widget_pill_bg"
-                android:text="5 • 12:40"
-                android:textColor="#D0BCFF"
-                android:textSize="10sp"
-                android:textStyle="bold"
-                android:paddingLeft="6dp"
-                android:paddingTop="2dp"
-                android:paddingRight="6dp"
-                android:paddingBottom="2dp" />
-
-            <TextView
-                android:id="@+id/widget_subject_5"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginLeft="8dp"
-                android:layout_marginRight="6dp"
-                android:ellipsize="end"
-                android:maxLines="1"
-                android:text="История"
-                android:textColor="#F2EFF4"
-                android:textSize="12sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:id="@+id/widget_room_5"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:background="@drawable/widget_room_badge_bg"
-                android:text="каб. 12"
-                android:textColor="#CAC4D0"
-                android:textSize="10sp"
-                android:paddingLeft="5dp"
-                android:paddingTop="1dp"
-                android:paddingRight="5dp"
-                android:paddingBottom="1dp"
-                android:visibility="gone" />
-        </LinearLayout>
-
-        <!-- More lessons footer indicator (if > 5 lessons) -->
-        <TextView
-            android:id="@+id/widget_more_lessons"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:gravity="center_horizontal"
-            android:paddingTop="2dp"
-            android:text="+ ещё 2 урока"
-            android:textColor="#938F99"
-            android:textSize="10sp"
-            android:visibility="gone" />
-
-    </LinearLayout>
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:divider="@null"
+        android:dividerHeight="0dp"
+        android:scrollbars="none" />
 
 </LinearLayout>

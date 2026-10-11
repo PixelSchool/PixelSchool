@@ -6,6 +6,7 @@ import android.appwidget.AppWidgetProvider
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.view.View
 import android.widget.RemoteViews
 import com.pixelschool.app.MainActivity
@@ -18,6 +19,53 @@ import java.util.Locale
 
 class ScheduleWidgetProvider : AppWidgetProvider() {
 
+    override fun onReceive(context: Context, intent: Intent) {
+        super.onReceive(context, intent)
+        val action = intent.action ?: return
+        if (action !in listOf(ACTION_PREV_DAY, ACTION_NEXT_DAY, ACTION_TODAY)) return
+
+        val appWidgetId = intent.getIntExtra(
+            AppWidgetManager.EXTRA_APPWIDGET_ID,
+            AppWidgetManager.INVALID_APPWIDGET_ID
+        )
+        if (appWidgetId == AppWidgetManager.INVALID_APPWIDGET_ID) return
+
+        val cacheStore = CacheStore(context)
+        val scheduleList = cacheStore.getScheduleCache(0) ?: emptyList()
+        if (scheduleList.isEmpty()) return
+
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val todayDateFormat = SimpleDateFormat("dd.MM.yyyy", Locale.getDefault())
+        val todayStr = todayDateFormat.format(Date())
+        val todayDayOfWeekFormat = SimpleDateFormat("EEEE", Locale("ru"))
+        val todayDayOfWeek = todayDayOfWeekFormat.format(Date()).replaceFirstChar { it.uppercase() }
+
+        val todayIndex = scheduleList.indexOfFirst { it.date == todayStr }.takeIf { it >= 0 }
+            ?: scheduleList.indexOfFirst { it.dayOfWeek.equals(todayDayOfWeek, ignoreCase = true) }.takeIf { it >= 0 }
+            ?: 0
+
+        var currentIndex = prefs.getInt("${KEY_DAY_INDEX}_$appWidgetId", todayIndex)
+        if (currentIndex !in scheduleList.indices) currentIndex = todayIndex
+
+        when (action) {
+            ACTION_PREV_DAY -> {
+                currentIndex = (currentIndex - 1).coerceAtLeast(0)
+                prefs.edit().putInt("${KEY_DAY_INDEX}_$appWidgetId", currentIndex).apply()
+            }
+            ACTION_NEXT_DAY -> {
+                currentIndex = (currentIndex + 1).coerceAtMost(scheduleList.lastIndex)
+                prefs.edit().putInt("${KEY_DAY_INDEX}_$appWidgetId", currentIndex).apply()
+            }
+            ACTION_TODAY -> {
+                prefs.edit().putInt("${KEY_DAY_INDEX}_$appWidgetId", todayIndex).apply()
+            }
+        }
+
+        val appWidgetManager = AppWidgetManager.getInstance(context)
+        updateAppWidget(context, appWidgetManager, appWidgetId)
+        appWidgetManager.notifyAppWidgetViewDataChanged(appWidgetId, R.id.widget_lessons_list)
+    }
+
     override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
         for (appWidgetId in appWidgetIds) {
             updateAppWidget(context, appWidgetManager, appWidgetId)
@@ -25,6 +73,13 @@ class ScheduleWidgetProvider : AppWidgetProvider() {
     }
 
     companion object {
+        const val ACTION_PREV_DAY = "com.pixelschool.app.action.WIDGET_PREV_DAY"
+        const val ACTION_NEXT_DAY = "com.pixelschool.app.action.WIDGET_NEXT_DAY"
+        const val ACTION_TODAY = "com.pixelschool.app.action.WIDGET_TODAY"
+
+        private const val PREFS_NAME = "pixel_school_widget_prefs"
+        private const val KEY_DAY_INDEX = "widget_day_index"
+
         fun updateAllWidgets(context: Context) {
             val appWidgetManager = AppWidgetManager.getInstance(context) ?: return
             val componentName = ComponentName(context, ScheduleWidgetProvider::class.java)
@@ -32,28 +87,17 @@ class ScheduleWidgetProvider : AppWidgetProvider() {
             if (ids != null && ids.isNotEmpty()) {
                 for (id in ids) {
                     updateAppWidget(context, appWidgetManager, id)
+                    appWidgetManager.notifyAppWidgetViewDataChanged(id, R.id.widget_lessons_list)
                 }
             }
         }
 
-        private fun updateAppWidget(
+        fun updateAppWidget(
             context: Context,
             appWidgetManager: AppWidgetManager,
             appWidgetId: Int
         ) {
             val views = RemoteViews(context.packageName, R.layout.widget_schedule)
-
-            // Click opens MainActivity
-            val intent = Intent(context, MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            }
-            val pendingIntent = PendingIntent.getActivity(
-                context,
-                0,
-                intent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-            views.setOnClickPendingIntent(R.id.widget_root, pendingIntent)
 
             // Load schedule from CacheStore
             val cacheStore = CacheStore(context)
@@ -65,18 +109,32 @@ class ScheduleWidgetProvider : AppWidgetProvider() {
             val todayDayOfWeekFormat = SimpleDateFormat("EEEE", Locale("ru"))
             val todayDayOfWeek = todayDayOfWeekFormat.format(Date()).replaceFirstChar { it.uppercase() }
 
-            val todaySchedule: DaySchedule? = scheduleList?.firstOrNull { it.date == todayStr }
-                ?: scheduleList?.firstOrNull { it.dayOfWeek.equals(todayDayOfWeek, ignoreCase = true) }
-                ?: scheduleList?.firstOrNull()
+            val todayIndex = scheduleList?.indexOfFirst { it.date == todayStr }?.takeIf { it >= 0 }
+                ?: scheduleList?.indexOfFirst { it.dayOfWeek.equals(todayDayOfWeek, ignoreCase = true) }?.takeIf { it >= 0 }
+                ?: 0
 
-            val lessons = todaySchedule?.lessons?.filter { it.subject.isNotBlank() } ?: emptyList()
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val currentIndex = prefs.getInt("${KEY_DAY_INDEX}_$appWidgetId", todayIndex)
 
-            // Header binding
-            val isToday = todaySchedule?.date == todayStr || todaySchedule?.dayOfWeek.equals(todayDayOfWeek, ignoreCase = true)
-            val dayTitle = if (isToday) "Сегодня" else (todaySchedule?.dayOfWeek ?: todayDayOfWeek)
+            val currentSchedule: DaySchedule? = if (scheduleList != null && currentIndex in scheduleList.indices) {
+                scheduleList[currentIndex]
+            } else {
+                scheduleList?.getOrNull(todayIndex) ?: scheduleList?.firstOrNull()
+            }
+
+            val lessons = currentSchedule?.lessons?.filter { it.subject.isNotBlank() } ?: emptyList()
+
+            // Header info
+            val isToday = currentSchedule?.date == todayStr || currentSchedule?.dayOfWeek.equals(todayDayOfWeek, ignoreCase = true)
+            val isTomorrow = scheduleList != null && currentIndex == todayIndex + 1
+            val dayTitle = when {
+                isToday -> "Сегодня"
+                isTomorrow -> "Завтра"
+                else -> currentSchedule?.dayOfWeek ?: todayDayOfWeek
+            }
             views.setTextViewText(R.id.widget_header_day, dayTitle)
 
-            val formattedDate = todaySchedule?.date?.let { formatWidgetDate(it) } ?: ""
+            val formattedDate = currentSchedule?.date?.let { formatWidgetDate(it) } ?: ""
             views.setTextViewText(R.id.widget_header_date, formattedDate)
 
             val badgeText = if (lessons.isNotEmpty()) {
@@ -92,92 +150,73 @@ class ScheduleWidgetProvider : AppWidgetProvider() {
             }
             views.setTextViewText(R.id.widget_header_badge, badgeText)
 
-            // Lessons binding
-            val rowIds = listOf(
-                R.id.widget_row_1,
-                R.id.widget_row_2,
-                R.id.widget_row_3,
-                R.id.widget_row_4,
-                R.id.widget_row_5
+            // Setup Navigation Buttons
+            val prevIntent = Intent(context, ScheduleWidgetProvider::class.java).apply {
+                action = ACTION_PREV_DAY
+                putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
+            }
+            val prevPendingIntent = PendingIntent.getBroadcast(
+                context,
+                appWidgetId * 10 + 1,
+                prevIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
-            val timeIds = listOf(
-                R.id.widget_time_1,
-                R.id.widget_time_2,
-                R.id.widget_time_3,
-                R.id.widget_time_4,
-                R.id.widget_time_5
-            )
-            val subjectIds = listOf(
-                R.id.widget_subject_1,
-                R.id.widget_subject_2,
-                R.id.widget_subject_3,
-                R.id.widget_subject_4,
-                R.id.widget_subject_5
-            )
-            val roomIds = listOf(
-                R.id.widget_room_1,
-                R.id.widget_room_2,
-                R.id.widget_room_3,
-                R.id.widget_room_4,
-                R.id.widget_room_5
-            )
+            views.setOnClickPendingIntent(R.id.widget_btn_prev_day, prevPendingIntent)
 
+            val nextIntent = Intent(context, ScheduleWidgetProvider::class.java).apply {
+                action = ACTION_NEXT_DAY
+                putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
+            }
+            val nextPendingIntent = PendingIntent.getBroadcast(
+                context,
+                appWidgetId * 10 + 2,
+                nextIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            views.setOnClickPendingIntent(R.id.widget_btn_next_day, nextPendingIntent)
+
+            val todayIntent = Intent(context, ScheduleWidgetProvider::class.java).apply {
+                action = ACTION_TODAY
+                putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
+            }
+            val todayPendingIntent = PendingIntent.getBroadcast(
+                context,
+                appWidgetId * 10 + 3,
+                todayIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            views.setOnClickPendingIntent(R.id.widget_header_center, todayPendingIntent)
+
+            // Empty state message
             if (scheduleList == null) {
-                views.setTextViewText(R.id.widget_empty, "Откройте дневник для загрузки")
+                views.setTextViewText(R.id.widget_empty, "Откройте дневник для синхронизации")
                 views.setViewVisibility(R.id.widget_empty, View.VISIBLE)
-                views.setViewVisibility(R.id.widget_lessons_container, View.GONE)
             } else if (lessons.isEmpty()) {
-                views.setTextViewText(R.id.widget_empty, "Уроков на сегодня нет 🎉")
+                views.setTextViewText(R.id.widget_empty, "Уроков на этот день нет 🎉")
                 views.setViewVisibility(R.id.widget_empty, View.VISIBLE)
-                views.setViewVisibility(R.id.widget_lessons_container, View.GONE)
             } else {
                 views.setViewVisibility(R.id.widget_empty, View.GONE)
-                views.setViewVisibility(R.id.widget_lessons_container, View.VISIBLE)
-
-                val displayCount = minOf(lessons.size, rowIds.size)
-                for (i in rowIds.indices) {
-                    if (i < displayCount) {
-                        val lesson = lessons[i]
-                        val timeStr = if (lesson.startTime.isNotBlank()) {
-                            "${lesson.num} • ${lesson.startTime}"
-                        } else {
-                            "${lesson.num} урок"
-                        }
-                        views.setTextViewText(timeIds[i], timeStr)
-                        views.setTextViewText(subjectIds[i], lesson.subject)
-
-                        if (lesson.room.isNotBlank()) {
-                            val roomDisplay = if (lesson.room.startsWith("каб", ignoreCase = true)) {
-                                lesson.room
-                            } else {
-                                "каб. ${lesson.room}"
-                            }
-                            views.setTextViewText(roomIds[i], roomDisplay)
-                            views.setViewVisibility(roomIds[i], View.VISIBLE)
-                        } else {
-                            views.setViewVisibility(roomIds[i], View.GONE)
-                        }
-
-                        views.setViewVisibility(rowIds[i], View.VISIBLE)
-                    } else {
-                        views.setViewVisibility(rowIds[i], View.GONE)
-                    }
-                }
-
-                // Show footer if there are more than 5 lessons
-                if (lessons.size > rowIds.size) {
-                    val remaining = lessons.size - rowIds.size
-                    val moreWord = when {
-                        remaining % 10 == 1 && remaining % 100 != 11 -> "урок"
-                        remaining % 10 in 2..4 && (remaining % 100 !in 12..14) -> "урока"
-                        else -> "уроков"
-                    }
-                    views.setTextViewText(R.id.widget_more_lessons, "+ ещё $remaining $moreWord")
-                    views.setViewVisibility(R.id.widget_more_lessons, View.VISIBLE)
-                } else {
-                    views.setViewVisibility(R.id.widget_more_lessons, View.GONE)
-                }
             }
+
+            // Scrollable ListView setup with RemoteViewsService
+            val serviceIntent = Intent(context, ScheduleWidgetService::class.java).apply {
+                putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
+                data = Uri.parse("widget://$appWidgetId/$currentIndex/${System.currentTimeMillis()}")
+            }
+            views.setRemoteAdapter(R.id.widget_lessons_list, serviceIntent)
+            views.setEmptyView(R.id.widget_lessons_list, R.id.widget_empty)
+
+            // Click on lesson opens MainActivity
+            val clickIntent = Intent(context, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            }
+            val clickPendingIntent = PendingIntent.getActivity(
+                context,
+                0,
+                clickIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
+            )
+            views.setPendingIntentTemplate(R.id.widget_lessons_list, clickPendingIntent)
 
             appWidgetManager.updateAppWidget(appWidgetId, views)
         }
