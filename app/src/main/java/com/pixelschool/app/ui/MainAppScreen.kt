@@ -20,7 +20,8 @@ import androidx.compose.material.icons.rounded.School
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -31,7 +32,6 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -74,36 +74,28 @@ fun MainAppScreen(
 
         Scaffold(
             topBar = {
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(44.dp),
-                    color = MaterialTheme.colorScheme.background
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(horizontal = 16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
+                TopAppBar(
+                    title = {
                         Text(
                             text = currentScreen.title,
-                            style = MaterialTheme.typography.titleMedium,
+                            style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold
                         )
-                        IconButton(
-                            onClick = { viewModel.loadData() },
-                            modifier = Modifier.size(32.dp)
-                        ) {
+                    },
+                    actions = {
+                        IconButton(onClick = { viewModel.loadData() }) {
                             Icon(
                                 imageVector = Icons.Rounded.Refresh,
-                                contentDescription = "Обновить",
-                                modifier = Modifier.size(18.dp)
+                                contentDescription = "Обновить"
                             )
                         }
-                    }
-                }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.background,
+                        titleContentColor = MaterialTheme.colorScheme.onBackground
+                    ),
+                    windowInsets = TopAppBarDefaults.windowInsets
+                )
             },
             bottomBar = {
                 NavigationBar(

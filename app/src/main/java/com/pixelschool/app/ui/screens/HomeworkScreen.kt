@@ -25,13 +25,17 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBackIos
 import androidx.compose.material.icons.automirrored.rounded.ArrowForwardIos
 import androidx.compose.material.icons.rounded.AssignmentTurnedIn
 import androidx.compose.material.icons.rounded.Today
-import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Badge
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -277,16 +281,16 @@ fun HomeworkScreen(
                 val countForDay = homeworkList.count { HomeworkDateUtils.matchesDay(it, index, monday, schedule) }
 
                 Surface(
-                    shape = RoundedCornerShape(12.dp),
+                    shape = RoundedCornerShape(14.dp),
                     color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHighest,
                     modifier = Modifier
-                        .height(38.dp)
+                        .height(48.dp)
                         .clickable { selectedDayIndex = index }
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         Text(
                             text = HomeworkDateUtils.getDayShortLabel(index),
@@ -296,27 +300,24 @@ fun HomeworkScreen(
                         )
                         Text(
                             text = "${dayDate.dayOfMonth}",
-                            style = MaterialTheme.typography.labelMedium,
+                            style = MaterialTheme.typography.labelLarge,
                             fontWeight = FontWeight.Bold,
                             color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
                         )
                         if (countForDay > 0) {
-                            Surface(
-                                shape = RoundedCornerShape(4.dp),
-                                color = if (isSelected)
+                            Badge(
+                                containerColor = if (isSelected)
                                     MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.25f)
                                 else
-                                    MaterialTheme.colorScheme.primaryContainer
+                                    MaterialTheme.colorScheme.primaryContainer,
+                                contentColor = if (isSelected)
+                                    MaterialTheme.colorScheme.onPrimary
+                                else
+                                    MaterialTheme.colorScheme.onPrimaryContainer
                             ) {
                                 Text(
                                     text = "$countForDay",
-                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (isSelected)
-                                        MaterialTheme.colorScheme.onPrimary
-                                    else
-                                        MaterialTheme.colorScheme.onPrimaryContainer
+                                    style = MaterialTheme.typography.labelSmall
                                 )
                             }
                         }
@@ -355,34 +356,37 @@ fun HomeworkScreen(
 
         Spacer(modifier = Modifier.height(2.dp))
 
-        // Compact Status Filter Chips (height 28.dp)
-        Row(
+        // M3 Canonical SingleChoiceSegmentedButtonRow
+        val filterOptions = listOf(
+            "Все ($totalCount)",
+            "Осталось (${totalCount - completedCount})",
+            "Сделано ($completedCount)"
+        )
+        SingleChoiceSegmentedButtonRow(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 2.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                .padding(horizontal = 16.dp, vertical = 2.dp)
         ) {
-            FilterChip(
-                selected = statusFilter == HomeworkStatusFilter.ALL,
-                onClick = { statusFilter = HomeworkStatusFilter.ALL },
-                label = { Text("Все ($totalCount)", fontSize = 12.sp) },
-                modifier = Modifier.height(28.dp),
-                shape = RoundedCornerShape(8.dp)
-            )
-            FilterChip(
-                selected = statusFilter == HomeworkStatusFilter.PENDING,
-                onClick = { statusFilter = HomeworkStatusFilter.PENDING },
-                label = { Text("Осталось (${totalCount - completedCount})", fontSize = 12.sp) },
-                modifier = Modifier.height(28.dp),
-                shape = RoundedCornerShape(8.dp)
-            )
-            FilterChip(
-                selected = statusFilter == HomeworkStatusFilter.COMPLETED,
-                onClick = { statusFilter = HomeworkStatusFilter.COMPLETED },
-                label = { Text("Сделано ($completedCount)", fontSize = 12.sp) },
-                modifier = Modifier.height(28.dp),
-                shape = RoundedCornerShape(8.dp)
-            )
+            filterOptions.forEachIndexed { index, label ->
+                val filter = when (index) {
+                    0 -> HomeworkStatusFilter.ALL
+                    1 -> HomeworkStatusFilter.PENDING
+                    else -> HomeworkStatusFilter.COMPLETED
+                }
+                SegmentedButton(
+                    shape = SegmentedButtonDefaults.itemShape(index = index, count = filterOptions.size),
+                    onClick = { statusFilter = filter },
+                    selected = statusFilter == filter,
+                    label = {
+                        Text(
+                            text = label,
+                            style = MaterialTheme.typography.labelSmall,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                )
+            }
         }
 
         Spacer(modifier = Modifier.height(6.dp))
