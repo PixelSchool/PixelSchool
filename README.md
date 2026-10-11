@@ -78,16 +78,16 @@
 git clone git@github.com:Refyrd/PixelSchool.git
 cd PixelSchool
 
-# Сборка Debug APK
-./gradlew assembleDebug
+# Сборка подписанного Release APK
+./gradlew assembleRelease
 
 # Установка на подключенное устройство через ADB
-adb install -r app/build/outputs/apk/debug/app-debug.apk
+adb install -r app/build/outputs/apk/release/app-release.apk
 ```
 
 Готовый APK сохраняется по пути:
 ```
-app/build/outputs/apk/debug/app-debug.apk
+app/build/outputs/apk/release/app-release.apk
 ```
 
 ---
@@ -95,9 +95,9 @@ app/build/outputs/apk/debug/app-debug.apk
 ## ⚙️ Непрерывная интеграция (GitHub Actions)
 
 В репозитории настроен автоматический пайплайн [GitHub Actions](https://github.com/Refyrd/PixelSchool/actions):
-- При каждом `git push` в ветку `main` запускается сборка APK в изолированном окружении Ubuntu.
-- Проверяются компиляция Kotlin-кода и валидность всех ресурсов.
-- Сгенерированный артефакт `PixelSchool-debug-apk` доступен для скачивания на странице запуска Actions.
+- При каждом `git push` в ветку `main` запускается сборка подписанного Release APK в изолированном окружении Ubuntu.
+- Проверяются компиляция Kotlin-кода, подпись и валидность всех ресурсов.
+- Сгенерированный артефакт `PixelSchool-release-apk` доступен для скачивания на странице запуска Actions.
 - Workflow также можно запускать вручную через кнопку **Run workflow** (`workflow_dispatch`).
 
 ---
