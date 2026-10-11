@@ -34,6 +34,10 @@ class EljurApiClient(
 
     private val browserUserAgent = "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.6723.102 Mobile Safari/537.36"
 
+    companion object {
+        private const val TAG = "PixelSchoolNetwork"
+    }
+
     fun buildRequest(url: String, cookies: String? = null, isJson: Boolean = true): Request {
         val builder = Request.Builder()
             .url(url)
@@ -48,7 +52,57 @@ class EljurApiClient(
         if (!cookies.isNullOrBlank()) {
             builder.header("Cookie", cookies)
         }
-        return builder.build()
+        val request = builder.build()
+        logRequest(request)
+        return request
+    }
+
+    private fun logRequest(req: Request) {
+        val maskedCookies = req.header("Cookie")?.let { "[cookies present, len=${it.length}]" } ?: "none"
+        val query = req.url.query ?: "none"
+        Log.d(TAG, "--> ${req.method} ${req.url.scheme}://${req.url.host}${req.url.encodedPath} (query: $query, cookies: $maskedCookies)")
+    }
+
+    private fun logResponseError(req: Request, resp: okhttp3.Response, body: String?) {
+        val contentType = resp.header("Content-Type") ?: "unknown"
+        val query = req.url.query ?: "none"
+        val headers = req.headers.names().joinToString(", ") { name ->
+            if (name.equals("Cookie", ignoreCase = true)) "Cookie=[MASKED]" else "$name=${req.header(name)}"
+        }
+        val preview = body?.take(300)?.replace("\n", " ") ?: ""
+        Log.e(
+            TAG,
+            "<-- HTTP ${resp.code} for ${req.method} ${req.url}\n" +
+            "    Host: ${req.url.host}, Path: ${req.url.encodedPath}\n" +
+            "    Query: $query\n" +
+            "    Request Headers: [$headers]\n" +
+            "    Response Content-Type: $contentType\n" +
+            "    Body Preview: $preview"
+        )
+    }
+
+    fun parseJsonResponse(response: okhttp3.Response, body: String?, request: Request): JSONObject? {
+        if (body.isNullOrBlank()) return null
+        val contentType = response.header("Content-Type")?.lowercase() ?: ""
+        val trimmed = body.trimStart()
+        val isJson = contentType.contains("application/json") || trimmed.startsWith("{") || trimmed.startsWith("[")
+
+        if (!isJson) {
+            val preview = body.take(200).replace("\n", " ")
+            Log.w(
+                TAG,
+                "Non-JSON response received from ${request.url}. " +
+                "HTTP ${response.code}, Content-Type: '$contentType', Preview: $preview"
+            )
+            return null
+        }
+
+        return try {
+            JSONObject(body)
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to parse JSON from ${request.url}: ${e.message}")
+            null
+        }
     }
 
     fun getBaseUrls(vendor: String = "edu"): List<String> {
@@ -123,8 +177,11 @@ class EljurApiClient(
                     val req = buildRequest(url, cookies)
                     val resp = client.newCall(req).execute()
                     val body = resp.body?.string()
-                    if (resp.isSuccessful && !body.isNullOrEmpty()) {
-                        val json = JSONObject(body)
+                    val json = if (resp.isSuccessful) parseJsonResponse(resp, body, req) else {
+                        logResponseError(req, resp, body)
+                        null
+                    }
+                    if (json != null) {
                         val respObj = json.optJSONObject("response") ?: json
                         if (respObj.optInt("state", 200) == 200) {
                             val result = respObj.optJSONObject("result") ?: respObj
@@ -212,8 +269,11 @@ class EljurApiClient(
                     val req = buildRequest(url, cookies)
                     val resp = client.newCall(req).execute()
                     val body = resp.body?.string()
-                    if (resp.isSuccessful && !body.isNullOrEmpty()) {
-                        val json = JSONObject(body)
+                    val json = if (resp.isSuccessful) parseJsonResponse(resp, body, req) else {
+                        logResponseError(req, resp, body)
+                        null
+                    }
+                    if (json != null) {
                         val respObj = json.optJSONObject("response") ?: json
                         if (respObj.optInt("state", 200) == 200) {
                             val result = respObj.optJSONObject("result") ?: respObj
@@ -264,8 +324,11 @@ class EljurApiClient(
                         try {
                             val resp = client.newCall(req).execute()
                             val body = resp.body?.string()
-                            if (resp.isSuccessful && !body.isNullOrEmpty()) {
-                                val json = JSONObject(body)
+                            val json = if (resp.isSuccessful) parseJsonResponse(resp, body, req) else {
+                                logResponseError(req, resp, body)
+                                null
+                            }
+                            if (json != null) {
                                 val session = extractUserVendor(json, fallbackUserName)
                                 if (session != null) {
                                     val enriched = enrichWithRules(session, cookies)
@@ -300,8 +363,11 @@ class EljurApiClient(
                         try {
                             val cookieResp = client.newCall(cookieReq).execute()
                             val cookieBody = cookieResp.body?.string()
-                            if (cookieResp.isSuccessful && !cookieBody.isNullOrEmpty()) {
-                                val json = JSONObject(cookieBody)
+                            val json = if (cookieResp.isSuccessful) parseJsonResponse(cookieResp, cookieBody, cookieReq) else {
+                                logResponseError(cookieReq, cookieResp, cookieBody)
+                                null
+                            }
+                            if (json != null) {
                                 val session = extractUserVendor(json, fallbackUserName)
                                 if (session != null) {
                                     val enriched = enrichWithRules(session, cookies)
@@ -441,8 +507,11 @@ class EljurApiClient(
                             val req = buildRequest(url, cookies)
                             val resp = client.newCall(req).execute()
                             val body = resp.body?.string()
-                            if (resp.isSuccessful && !body.isNullOrEmpty()) {
-                                val json = JSONObject(body)
+                            val json = if (resp.isSuccessful) parseJsonResponse(resp, body, req) else {
+                                logResponseError(req, resp, body)
+                                null
+                            }
+                            if (json != null) {
                                 val respObj = json.optJSONObject("response") ?: json
                                 if (respObj.optInt("state", 200) == 200) {
                                     val periods = parsePeriodsJson(respObj, studentId)
@@ -452,7 +521,7 @@ class EljurApiClient(
                                 }
                             }
                         } catch (e: Exception) {
-                            Log.w("EljurApiClient", "fetchPeriods error: ${e.message} for $url")
+                            Log.w(TAG, "fetchPeriods error: ${e.message} for $url")
                         }
                     }
                 }
@@ -634,17 +703,10 @@ class EljurApiClient(
                         val candParam = if (cand != null) "&student=$cand" else ""
                         val candidateUrls = listOf(
                             "$base/apiv3/getdiary?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam&days=$targetDays&rings=1",
-                            "$base/apiv3/getdiary?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam&days=$targetDays&rings=true",
                             "$base/apiv3/getdiary?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam&days=$targetDays",
-                            "$base/api/getdiary?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam&days=$targetDays&rings=1",
-                            "$base/api/getdiary?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam&days=$targetDays",
-                            "$base/apiv3/getdials?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam&days=$targetDays&rings=1",
-                            "$base/apiv3/getdials?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam&days=$targetDays",
                             "$base/apiv3/getschedule?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam&days=$targetDays&rings=1",
-                            "$base/apiv3/getschedule?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam&days=$targetDays&rings=true",
-                            "$base/api/getschedule?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam&days=$targetDays&rings=1",
-                            "$base/eljur/apiv3/getdiary?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam&days=$targetDays&rings=1",
-                            "$base/journal/apiv3/getdiary?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam&days=$targetDays&rings=1"
+                            "$base/api/getdiary?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam&days=$targetDays&rings=1",
+                            "$base/api/getschedule?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam&days=$targetDays&rings=1"
                         )
 
                         for (url in candidateUrls) {
@@ -653,27 +715,34 @@ class EljurApiClient(
                                 val response = client.newCall(req).execute()
                                 val body = response.body?.string()
 
-                                if (response.isSuccessful && !body.isNullOrEmpty()) {
-                                    val json = JSONObject(body)
-                                    val respObj = json.optJSONObject("response") ?: json
-                                    if (respObj.optInt("state", 200) == 200) {
-                                        val parsedDays = parseApiDiaryDays(respObj, cand ?: studentId)
-                                        if (parsedDays.isNotEmpty()) {
-                                            return@withContext Result.success(parsedDays)
+                                if (response.isSuccessful) {
+                                    val json = parseJsonResponse(response, body, req)
+                                    if (json != null) {
+                                        val respObj = json.optJSONObject("response") ?: json
+                                        if (respObj.optInt("state", 200) == 200) {
+                                            val parsedDays = parseApiDiaryDays(respObj, cand ?: studentId)
+                                            if (parsedDays.isNotEmpty()) {
+                                                Log.d(TAG, "Successfully loaded ${parsedDays.size} days from $url")
+                                                return@withContext Result.success(parsedDays)
+                                            }
+                                        } else {
+                                            val err = respObj.optJSONObject("error")?.optString("message")
+                                                ?: "state=${respObj.optInt("state")}"
+                                            lastApiError = err
+                                            Log.w(TAG, "Diary API call returned error: $err for $url")
                                         }
                                     } else {
-                                        val err = respObj.optJSONObject("error")?.optString("message")
-                                            ?: "state=${respObj.optInt("state")}"
-                                        lastApiError = err
-                                        Log.w("EljurApiClient", "Diary API call returned error: $err for $url")
+                                        logResponseError(req, response, body)
                                     }
                                 } else {
-                                    val err = "HTTP ${response.code}: ${body?.take(150)}"
-                                    lastApiError = err
+                                    logResponseError(req, response, body)
+                                    if (response.code != 404) {
+                                        lastApiError = "HTTP ${response.code}"
+                                    }
                                 }
                             } catch (e: Exception) {
                                 lastApiError = e.message
-                                Log.w("EljurApiClient", "Exception querying diary API: ${e.message}")
+                                Log.w(TAG, "Exception querying diary API: ${e.message}")
                             }
                         }
                     }
@@ -770,9 +839,7 @@ class EljurApiClient(
                             val daysParam = if (range != null) "&days=$range" else ""
                             val candidateMarkUrls = listOf(
                                 "$base/apiv3/getmarks?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam$daysParam",
-                                "$base/api/getmarks?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam$daysParam",
-                                "$base/eljur/apiv3/getmarks?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam$daysParam",
-                                "$base/journal/apiv3/getmarks?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam$daysParam"
+                                "$base/api/getmarks?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam$daysParam"
                             )
                             for (url in candidateMarkUrls) {
                                 try {
@@ -780,27 +847,33 @@ class EljurApiClient(
                                     val response = client.newCall(req).execute()
                                     val body = response.body?.string()
 
-                                    if (response.isSuccessful && !body.isNullOrEmpty()) {
-                                        val json = JSONObject(body)
-                                        val respObj = json.optJSONObject("response") ?: json
-                                        if (respObj.optInt("state", 200) == 200) {
-                                            val marks = parseApiMarks(respObj, cand ?: studentId)
-                                            if (marks.isNotEmpty()) {
-                                                // Merge final marks from getfinalassessments if available
-                                                val enrichedMarks = if (finalMarksMap.isNotEmpty()) {
-                                                    marks.map { subj ->
-                                                        val fm = subj.finalMark ?: finalMarksMap[subj.subject]
-                                                        subj.copy(finalMark = fm)
-                                                    }
-                                                } else marks
+                                    if (response.isSuccessful) {
+                                        val json = parseJsonResponse(response, body, req)
+                                        if (json != null) {
+                                            val respObj = json.optJSONObject("response") ?: json
+                                            if (respObj.optInt("state", 200) == 200) {
+                                                val marks = parseApiMarks(respObj, cand ?: studentId)
+                                                if (marks.isNotEmpty()) {
+                                                    // Merge final marks from getfinalassessments if available
+                                                    val enrichedMarks = if (finalMarksMap.isNotEmpty()) {
+                                                        marks.map { subj ->
+                                                            val fm = subj.finalMark ?: finalMarksMap[subj.subject]
+                                                            subj.copy(finalMark = fm)
+                                                        }
+                                                    } else marks
 
-                                                Log.d("EljurApiClient", "Successfully fetched ${enrichedMarks.size} subjects from $url")
-                                                return@withContext Result.success(enrichedMarks)
+                                                    Log.d(TAG, "Successfully fetched ${enrichedMarks.size} subjects from $url")
+                                                    return@withContext Result.success(enrichedMarks)
+                                                }
                                             }
+                                        } else {
+                                            logResponseError(req, response, body)
                                         }
+                                    } else {
+                                        logResponseError(req, response, body)
                                     }
                                 } catch (e: Exception) {
-                                    Log.w("EljurApiClient", "Marks API candidate failed: ${e.message} for $url")
+                                    Log.w(TAG, "Marks API candidate failed: ${e.message} for $url")
                                 }
                             }
                         }
@@ -1070,18 +1143,24 @@ class EljurApiClient(
                                 val req = buildRequest(url, cookies)
                                 val resp = client.newCall(req).execute()
                                 val body = resp.body?.string()
-                                if (resp.isSuccessful && !body.isNullOrEmpty()) {
-                                    val json = JSONObject(body)
-                                    val respObj = json.optJSONObject("response") ?: json
-                                    if (respObj.optInt("state", 200) == 200) {
-                                        val finalMarks = parseFinalAssessmentsJson(respObj, cand ?: studentId)
-                                        if (finalMarks.isNotEmpty()) {
-                                            return@withContext Result.success(finalMarks)
+                                if (resp.isSuccessful) {
+                                    val json = parseJsonResponse(resp, body, req)
+                                    if (json != null) {
+                                        val respObj = json.optJSONObject("response") ?: json
+                                        if (respObj.optInt("state", 200) == 200) {
+                                            val finalMarks = parseFinalAssessmentsJson(respObj, cand ?: studentId)
+                                            if (finalMarks.isNotEmpty()) {
+                                                return@withContext Result.success(finalMarks)
+                                            }
                                         }
+                                    } else {
+                                        logResponseError(req, resp, body)
                                     }
+                                } else {
+                                    logResponseError(req, resp, body)
                                 }
                             } catch (e: Exception) {
-                                Log.w("EljurApiClient", "fetchFinalAssessments error: ${e.message} for $url")
+                                Log.w(TAG, "fetchFinalAssessments error: ${e.message} for $url")
                             }
                         }
                     }
@@ -1202,13 +1281,18 @@ class EljurApiClient(
             }
             candidateUrls.add("$baseUrl/journal-app/itog")
             candidateUrls.add("$baseUrl/journal-app/marks")
-            candidateUrls.add("$baseUrl/journal-student")
+            candidateUrls.add("$baseUrl/journal-student-grades-action")
             candidateUrls.add("$baseUrl/journal-app")
 
             for (targetUrl in candidateUrls) {
                 val req = buildRequest(targetUrl, cookies, isJson = false)
                 val resp = client.newCall(req).execute()
                 val html = resp.body?.string() ?: continue
+
+                if (!resp.isSuccessful || html.contains("<title>Ошибка") || html.contains("Страница не найдена")) {
+                    logResponseError(req, resp, html)
+                    continue
+                }
 
                 // Check embedded JSON in script tags first
                 val scriptMarks = extractMarksFromHtmlScripts(html, studentId)
@@ -1510,12 +1594,18 @@ class EljurApiClient(
             }
             candidateUrls.add("$baseUrl/journal-app/week.0")
             candidateUrls.add("$baseUrl/journal-app")
-            candidateUrls.add("$baseUrl/journal-student")
+            candidateUrls.add("$baseUrl/journal-student-diary-action")
+            candidateUrls.add("$baseUrl/journal-schedule-action")
 
             for (targetUrl in candidateUrls) {
                 val request = buildRequest(targetUrl, cookies, isJson = false)
                 val response = client.newCall(request).execute()
                 val html = response.body?.string() ?: continue
+
+                if (!response.isSuccessful || html.contains("<title>Ошибка") || html.contains("Страница не найдена")) {
+                    logResponseError(request, response, html)
+                    continue
+                }
 
                 // Check embedded JSON in script tags first
                 val scriptDays = extractDiaryFromHtmlScripts(html, studentId)
