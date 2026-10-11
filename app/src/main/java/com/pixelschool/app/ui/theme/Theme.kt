@@ -73,7 +73,7 @@ fun PixelSchoolTheme(
 
     MaterialTheme(
         colorScheme = colorScheme,
-        typography = Typography,
+        typography = AppTypography,
         shapes = ExpressiveShapes,
         content = content
     )
