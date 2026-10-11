@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108" width="1024" height="1024">
+  <defs>
+    <!-- Background Linear Gradient -->
+    <linearGradient id="bgGrad" x1="54" y1="0" x2="54" y2="108" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#2A6BFD"/>
+      <stop offset="100%" stop-color="#0B37B2"/>
+    </linearGradient>
+
+    <!-- Top-Light Ambient Radial Reflection -->
+    <radialGradient id="ambientGlow" cx="54" cy="24" r="72" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#5B9CFF" stop-opacity="0.22"/>
+      <stop offset="100%" stop-color="#0B37B2" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Golden Tassel Gradient -->
+    <linearGradient id="tasselGrad" x1="21.53" y1="9.0" x2="21.53" y2="16.8" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFD166"/>
+      <stop offset="100%" stop-color="#FF9F1C"/>
+    </linearGradient>
+
+    <!-- Skullcap Gradient -->
+    <linearGradient id="skullGrad" x1="12" y1="13" x2="12" y2="21" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#D1E0F5"/>
+      <stop offset="100%" stop-color="#B3CCEE"/>
+    </linearGradient>
+
+    <!-- Mortarboard Gradient -->
+    <linearGradient id="capGrad" x1="12" y1="3" x2="12" y2="15" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="100%" stop-color="#EEF4FC"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Base Background -->
+  <rect width="108" height="108" fill="url(#bgGrad)"/>
+  <!-- Ambient Radial Glow -->
+  <rect width="108" height="108" fill="url(#ambientGlow)"/>
+
+  <!-- Drop Shadow -->
+  <g transform="translate(21.60, 23.93) scale(2.7)">
+    <path fill="#38001648" d="M20.98,9.5 L22.08,9.0 V16.2 C22.08,16.55 21.85,16.8 21.53,16.8 C21.21,16.8 20.98,16.55 20.98,16.2 Z" />
+    <path fill="#38001648" d="M5,13.18v2.81c0,0.73 0.4,1.41 1.04,1.76l5,2.73c0.6,0.33 1.32,0.33 1.92,0l5,-2.73c0.64,-0.35 1.04,-1.03 1.04,-1.76v-2.81l-6.04,3.3c-0.6,0.33 -1.32,0.33 -1.92,0L5,13.18z" />
+    <path fill="#38001648" d="M11.04,3.52 C11.64,3.20 12.36,3.20 12.96,3.52 L21.39,8.12 C21.85,8.37 22.08,8.68 22.08,9.0 L12.96,14.48 C12.36,14.80 11.64,14.80 11.04,14.48 L2.61,9.88 C1.92,9.50 1.92,8.50 2.61,8.12 Z" />
+  </g>
+
+  <!-- Main Emblem -->
+  <g transform="translate(21.60, 22.03) scale(2.7)">
+    <!-- Tassel -->
+    <path fill="url(#tasselGrad)" d="M20.98,9.5 L22.08,9.0 V16.2 C22.08,16.55 21.85,16.8 21.53,16.8 C21.21,16.8 20.98,16.55 20.98,16.2 Z" />
+    <!-- Skullcap -->
+    <path fill="url(#skullGrad)" d="M5,13.18v2.81c0,0.73 0.4,1.41 1.04,1.76l5,2.73c0.6,0.33 1.32,0.33 1.92,0l5,-2.73c0.64,-0.35 1.04,-1.03 1.04,-1.76v-2.81l-6.04,3.3c-0.6,0.33 -1.32,0.33 -1.92,0L5,13.18z" />
+    <!-- Mortarboard -->
+    <path fill="url(#capGrad)" d="M11.04,3.52 C11.64,3.20 12.36,3.20 12.96,3.52 L21.39,8.12 C21.85,8.37 22.08,8.68 22.08,9.0 L12.96,14.48 C12.36,14.80 11.64,14.80 11.04,14.48 L2.61,9.88 C1.92,9.50 1.92,8.50 2.61,8.12 Z" />
+    <!-- Specular Highlight -->
+    <path fill="#FFFFFF" fill-opacity="0.2" d="M11.04,3.52 C11.64,3.20 12.36,3.20 12.96,3.52 L20.5,8.4 L19.8,8.8 L12.0,4.4 L3.6,8.8 L2.61,8.12 Z" />
+  </g>
+</svg>

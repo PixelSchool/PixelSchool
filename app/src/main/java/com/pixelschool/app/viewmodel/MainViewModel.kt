@@ -65,6 +65,9 @@ class MainViewModel(
     private val _updateInfo = MutableStateFlow<com.pixelschool.app.data.remote.AppUpdateInfo?>(null)
     val updateInfo: StateFlow<com.pixelschool.app.data.remote.AppUpdateInfo?> = _updateInfo.asStateFlow()
 
+    private val _isCheckingUpdates = MutableStateFlow(false)
+    val isCheckingUpdates: StateFlow<Boolean> = _isCheckingUpdates.asStateFlow()
+
     init {
         // Immediately populate UI from cache for 0ms startup
         repository.getCachedSchedule(currentWeekOffset.value)?.let {
@@ -372,10 +375,15 @@ class MainViewModel(
 
     fun checkForUpdates() {
         viewModelScope.launch {
-            val checker = com.pixelschool.app.data.remote.UpdateChecker()
-            val result = checker.checkLatestRelease(currentVersion = "1.0.0")
-            result.getOrNull()?.let {
-                _updateInfo.value = it
+            _isCheckingUpdates.value = true
+            try {
+                val checker = com.pixelschool.app.data.remote.UpdateChecker()
+                val result = checker.checkLatestRelease()
+                result.getOrNull()?.let {
+                    _updateInfo.value = it
+                }
+            } finally {
+                _isCheckingUpdates.value = false
             }
         }
     }
