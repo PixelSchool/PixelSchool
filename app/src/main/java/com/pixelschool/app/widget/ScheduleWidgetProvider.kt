@@ -55,7 +55,7 @@ class ScheduleWidgetProvider : AppWidgetProvider() {
             )
             views.setOnClickPendingIntent(R.id.widget_root, pendingIntent)
 
-            // Load today's schedule from CacheStore
+            // Load schedule from CacheStore
             val cacheStore = CacheStore(context)
             val scheduleList = cacheStore.getScheduleCache(0) // Current week
 
@@ -65,19 +65,61 @@ class ScheduleWidgetProvider : AppWidgetProvider() {
             val todayDayOfWeekFormat = SimpleDateFormat("EEEE", Locale("ru"))
             val todayDayOfWeek = todayDayOfWeekFormat.format(Date()).replaceFirstChar { it.uppercase() }
 
-            views.setTextViewText(R.id.widget_day, todayDayOfWeek)
-
             val todaySchedule: DaySchedule? = scheduleList?.firstOrNull { it.date == todayStr }
                 ?: scheduleList?.firstOrNull { it.dayOfWeek.equals(todayDayOfWeek, ignoreCase = true) }
                 ?: scheduleList?.firstOrNull()
 
             val lessons = todaySchedule?.lessons?.filter { it.subject.isNotBlank() } ?: emptyList()
 
-            val lessonViewIds = listOf(
-                R.id.widget_lesson_1,
-                R.id.widget_lesson_2,
-                R.id.widget_lesson_3,
-                R.id.widget_lesson_4
+            // Header binding
+            val isToday = todaySchedule?.date == todayStr || todaySchedule?.dayOfWeek.equals(todayDayOfWeek, ignoreCase = true)
+            val dayTitle = if (isToday) "Сегодня" else (todaySchedule?.dayOfWeek ?: todayDayOfWeek)
+            views.setTextViewText(R.id.widget_header_day, dayTitle)
+
+            val formattedDate = todaySchedule?.date?.let { formatWidgetDate(it) } ?: ""
+            views.setTextViewText(R.id.widget_header_date, formattedDate)
+
+            val badgeText = if (lessons.isNotEmpty()) {
+                val count = lessons.size
+                val word = when {
+                    count % 10 == 1 && count % 100 != 11 -> "урок"
+                    count % 10 in 2..4 && (count % 100 !in 12..14) -> "урока"
+                    else -> "уроков"
+                }
+                "$count $word"
+            } else {
+                "PixelSchool"
+            }
+            views.setTextViewText(R.id.widget_header_badge, badgeText)
+
+            // Lessons binding
+            val rowIds = listOf(
+                R.id.widget_row_1,
+                R.id.widget_row_2,
+                R.id.widget_row_3,
+                R.id.widget_row_4,
+                R.id.widget_row_5
+            )
+            val timeIds = listOf(
+                R.id.widget_time_1,
+                R.id.widget_time_2,
+                R.id.widget_time_3,
+                R.id.widget_time_4,
+                R.id.widget_time_5
+            )
+            val subjectIds = listOf(
+                R.id.widget_subject_1,
+                R.id.widget_subject_2,
+                R.id.widget_subject_3,
+                R.id.widget_subject_4,
+                R.id.widget_subject_5
+            )
+            val roomIds = listOf(
+                R.id.widget_room_1,
+                R.id.widget_room_2,
+                R.id.widget_room_3,
+                R.id.widget_room_4,
+                R.id.widget_room_5
             )
 
             if (scheduleList == null) {
@@ -92,21 +134,65 @@ class ScheduleWidgetProvider : AppWidgetProvider() {
                 views.setViewVisibility(R.id.widget_empty, View.GONE)
                 views.setViewVisibility(R.id.widget_lessons_container, View.VISIBLE)
 
-                for (i in lessonViewIds.indices) {
-                    val viewId = lessonViewIds[i]
-                    if (i < lessons.size) {
+                val displayCount = minOf(lessons.size, rowIds.size)
+                for (i in rowIds.indices) {
+                    if (i < displayCount) {
                         val lesson = lessons[i]
-                        val roomStr = if (lesson.room.isNotBlank()) " • ${lesson.room}" else ""
-                        val text = "${lesson.num}. ${lesson.startTime} ${lesson.subject}$roomStr"
-                        views.setTextViewText(viewId, text)
-                        views.setViewVisibility(viewId, View.VISIBLE)
+                        val timeStr = if (lesson.startTime.isNotBlank()) {
+                            "${lesson.num} • ${lesson.startTime}"
+                        } else {
+                            "${lesson.num} урок"
+                        }
+                        views.setTextViewText(timeIds[i], timeStr)
+                        views.setTextViewText(subjectIds[i], lesson.subject)
+
+                        if (lesson.room.isNotBlank()) {
+                            val roomDisplay = if (lesson.room.startsWith("каб", ignoreCase = true)) {
+                                lesson.room
+                            } else {
+                                "каб. ${lesson.room}"
+                            }
+                            views.setTextViewText(roomIds[i], roomDisplay)
+                            views.setViewVisibility(roomIds[i], View.VISIBLE)
+                        } else {
+                            views.setViewVisibility(roomIds[i], View.GONE)
+                        }
+
+                        views.setViewVisibility(rowIds[i], View.VISIBLE)
                     } else {
-                        views.setViewVisibility(viewId, View.GONE)
+                        views.setViewVisibility(rowIds[i], View.GONE)
                     }
+                }
+
+                // Show footer if there are more than 5 lessons
+                if (lessons.size > rowIds.size) {
+                    val remaining = lessons.size - rowIds.size
+                    val moreWord = when {
+                        remaining % 10 == 1 && remaining % 100 != 11 -> "урок"
+                        remaining % 10 in 2..4 && (remaining % 100 !in 12..14) -> "урока"
+                        else -> "уроков"
+                    }
+                    views.setTextViewText(R.id.widget_more_lessons, "+ ещё $remaining $moreWord")
+                    views.setViewVisibility(R.id.widget_more_lessons, View.VISIBLE)
+                } else {
+                    views.setViewVisibility(R.id.widget_more_lessons, View.GONE)
                 }
             }
 
             appWidgetManager.updateAppWidget(appWidgetId, views)
+        }
+
+        private fun formatWidgetDate(dateStr: String): String {
+            val parts = dateStr.split(".")
+            if (parts.size >= 2) {
+                val day = parts[0].toIntOrNull() ?: return dateStr
+                val month = parts[1].toIntOrNull() ?: return dateStr
+                val months = listOf("", "янв.", "февр.", "марта", "апр.", "мая", "июня", "июля", "авг.", "сент.", "окт.", "нояб.", "дек.")
+                if (month in 1..12) {
+                    return "$day ${months[month]}"
+                }
+            }
+            return dateStr
         }
     }
 }

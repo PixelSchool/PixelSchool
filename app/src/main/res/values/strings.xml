@@ -9,4 +9,5 @@
     <string name="empty_schedule">В этот день уроков нет</string>
     <string name="empty_homework">Все задания выполнены!</string>
     <string name="empty_marks">Оценок пока нет</string>
+    <string name="widget_description">Расписание уроков на сегодня</string>
 </resources>
