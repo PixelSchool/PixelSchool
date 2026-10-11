@@ -20,11 +20,16 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.School
 import androidx.compose.material.icons.rounded.Warning
+import android.content.Intent
+import android.net.Uri
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -183,11 +188,18 @@ fun MainAppScreen(
                     }
                 }
 
-                Crossfade(
-                    targetState = currentScreen,
+                val isRefreshing by viewModel.isRefreshing.collectAsState()
+
+                PullToRefreshBox(
+                    isRefreshing = isRefreshing,
+                    onRefresh = { viewModel.refreshData() },
                     modifier = Modifier.fillMaxSize()
-                ) { screen ->
-                when (screen) {
+                ) {
+                    Crossfade(
+                        targetState = currentScreen,
+                        modifier = Modifier.fillMaxSize()
+                    ) { screen ->
+                    when (screen) {
                     Screen.Schedule -> {
                         val schedule by viewModel.schedule.collectAsState()
                         val selectedDayIndex by viewModel.selectedDayIndex.collectAsState()
@@ -226,8 +238,11 @@ fun MainAppScreen(
                         )
                     }
                     Screen.Profile -> {
+                        val updateInfo by viewModel.updateInfo.collectAsState()
                         ProfileScreen(
                             profile = profileState,
+                            updateInfo = updateInfo,
+                            onCheckUpdates = { viewModel.checkForUpdates() },
                             onLogout = { viewModel.logout() }
                         )
                     }
@@ -237,10 +252,13 @@ fun MainAppScreen(
     }
 }
 }
+}
 
 @Composable
 fun ProfileScreen(
     profile: ProfileUiState,
+    updateInfo: com.pixelschool.app.data.remote.AppUpdateInfo? = null,
+    onCheckUpdates: () -> Unit = {},
     onLogout: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -306,7 +324,71 @@ fun ProfileScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(36.dp))
+        Spacer(modifier = Modifier.height(28.dp))
+
+        // Update Card
+        val context = LocalContext.current
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(22.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = if (updateInfo?.isUpdateAvailable == true)
+                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+                else
+                    MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f)
+            )
+        ) {
+            Column(modifier = Modifier.padding(18.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = if (updateInfo?.isUpdateAvailable == true)
+                                "Доступно обновление v${updateInfo.latestVersion}"
+                            else
+                                "Версия приложения: 1.0.0",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = if (updateInfo?.isUpdateAvailable == true)
+                                "Новый стабильный релиз на GitHub"
+                            else
+                                "Установлена актуальная версия",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    if (updateInfo?.isUpdateAvailable == true) {
+                        Button(
+                            onClick = {
+                                val url = updateInfo.apkDownloadUrl ?: updateInfo.releaseUrl
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                                context.startActivity(intent)
+                            },
+                            shape = RoundedCornerShape(14.dp)
+                        ) {
+                            Text("Скачать")
+                        }
+                    } else {
+                        IconButton(onClick = onCheckUpdates) {
+                            Icon(
+                                imageVector = Icons.Rounded.Refresh,
+                                contentDescription = "Проверить",
+                                tint = MaterialTheme.colorScheme.outline
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(14.dp))
 
         Card(
             modifier = Modifier.fillMaxWidth(),

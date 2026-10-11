@@ -31,6 +31,9 @@ class MainViewModel(
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
+    private val _isRefreshing = MutableStateFlow(false)
+    val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
+
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
 
@@ -58,7 +61,24 @@ class MainViewModel(
     private val _marks = MutableStateFlow<List<SubjectSummary>>(emptyList())
     val marks: StateFlow<List<SubjectSummary>> = _marks.asStateFlow()
 
+    private val _updateInfo = MutableStateFlow<com.pixelschool.app.data.remote.AppUpdateInfo?>(null)
+    val updateInfo: StateFlow<com.pixelschool.app.data.remote.AppUpdateInfo?> = _updateInfo.asStateFlow()
+
     init {
+        // Immediately populate UI from cache for 0ms startup
+        repository.getCachedSchedule(currentWeekOffset.value)?.let {
+            if (it.isNotEmpty()) _schedule.value = it
+        }
+        repository.getCachedHomework()?.let {
+            if (it.isNotEmpty()) _homework.value = it
+        }
+        repository.getCachedGrades()?.let { (cachedMarks, cachedPeriods) ->
+            if (cachedMarks.isNotEmpty()) _marks.value = cachedMarks
+            if (cachedPeriods.isNotEmpty()) _periods.value = cachedPeriods
+        }
+
+        checkForUpdates()
+
         viewModelScope.launch {
             repository.session.collect { s ->
                 updateProfile(s)
@@ -237,9 +257,9 @@ class MainViewModel(
                     _errorState.value = e.toErrorUiState("Сессия устарела. Требуется повторный вход.")
                     return@launch
                 }
-                if (!curSession.isDemo) {
-                    _schedule.value = emptyList()
-                    _homework.value = emptyList()
+                if (!curSession.isDemo && _schedule.value.isEmpty()) {
+                    _schedule.value = repository.getCachedSchedule(newOffset) ?: emptyList()
+                    _homework.value = repository.getCachedHomework() ?: emptyList()
                 }
                 _errorMessage.value = e.message ?: "Не удалось загрузить данные"
                 _errorState.value = e.toErrorUiState("Не удалось загрузить данные")
@@ -267,8 +287,8 @@ class MainViewModel(
                         _errorState.value = e.toErrorUiState("Сессия устарела. Требуется повторный вход.")
                         return@launch
                     }
-                    if (!curSession.isDemo) {
-                        _marks.value = emptyList()
+                    if (!curSession.isDemo && _marks.value.isEmpty()) {
+                        _marks.value = repository.getCachedGrades()?.first ?: emptyList()
                     }
                     _errorMessage.value = e.message ?: "Не удалось загрузить оценки"
                     _errorState.value = e.toErrorUiState("Не удалось загрузить оценки")
@@ -280,8 +300,20 @@ class MainViewModel(
     }
 
     fun toggleHomework(id: String) {
+        val newState = repository.toggleHomework(id)
         _homework.value = _homework.value.map { hw ->
-            if (hw.id == id) hw.copy(isCompleted = !hw.isCompleted) else hw
+            if (hw.id == id) hw.copy(isCompleted = newState) else hw
+        }
+    }
+
+    fun refreshData() {
+        viewModelScope.launch {
+            _isRefreshing.value = true
+            try {
+                loadData()
+            } finally {
+                _isRefreshing.value = false
+            }
         }
     }
 
@@ -325,5 +357,15 @@ class MainViewModel(
         _periods.value = emptyList()
         _currentWeekOffset.value = HomeworkDateUtils.calculateDefaultWeekOffset()
         _selectedDayIndex.value = HomeworkDateUtils.calculateDefaultDayIndex()
+    }
+
+    fun checkForUpdates() {
+        viewModelScope.launch {
+            val checker = com.pixelschool.app.data.remote.UpdateChecker()
+            val result = checker.checkLatestRelease(currentVersion = "1.0.0")
+            result.getOrNull()?.let {
+                _updateInfo.value = it
+            }
+        }
     }
 }

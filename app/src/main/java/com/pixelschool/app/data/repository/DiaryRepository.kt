@@ -11,13 +11,16 @@ import com.pixelschool.app.data.model.SubjectSummary
 import com.pixelschool.app.data.model.UserSession
 import com.pixelschool.app.data.remote.AuthCredentials
 import com.pixelschool.app.data.remote.EljurApiClient
+import com.pixelschool.app.data.local.CacheStore
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 class DiaryRepository(
     private val sessionStore: SessionStore,
-    private val apiClient: EljurApiClient = EljurApiClient()
+    private val apiClient: EljurApiClient = EljurApiClient(),
+    private val cacheStore: CacheStore? = null,
+    private val context: android.content.Context? = null
 ) {
 
     private val _session = MutableStateFlow<UserSession?>(sessionStore.getSession())
@@ -151,10 +154,21 @@ class DiaryRepository(
         )
 
         return if (remoteResult.isSuccess) {
-            remoteResult.getOrThrow()
+            val list = remoteResult.getOrThrow()
+            cacheStore?.saveScheduleCache(weekOffset, list)
+            cacheStore?.saveLastSyncTime()
+            if (context != null) {
+                com.pixelschool.app.widget.ScheduleWidgetProvider.updateAllWidgets(context)
+            }
+            list
         } else {
-            throw remoteResult.exceptionOrNull()
-                ?: Exception("Не удалось загрузить расписание из регионального дневника")
+            val cached = cacheStore?.getScheduleCache(weekOffset)
+            if (cached != null && cached.isNotEmpty()) {
+                cached
+            } else {
+                throw remoteResult.exceptionOrNull()
+                    ?: Exception("Не удалось загрузить расписание из регионального дневника")
+            }
         }
     }
 
@@ -162,30 +176,55 @@ class DiaryRepository(
         val currentSession = _session.value
             ?: throw IllegalStateException("Сессия не найдена. Требуется авторизация.")
         if (currentSession.isDemo) {
-            return MockDataProvider.getHomeworkList()
+            val demoList = MockDataProvider.getHomeworkList()
+            return demoList.map { hw ->
+                hw.copy(isCompleted = cacheStore?.isHomeworkCompleted(hw.id) ?: hw.isCompleted)
+            }
         }
 
-        val schedule = getSchedule(weekOffset)
+        val schedule = try {
+            getSchedule(weekOffset)
+        } catch (e: Exception) {
+            val cachedHw = cacheStore?.getHomeworkCache()
+            if (cachedHw != null && cachedHw.isNotEmpty()) {
+                return cachedHw
+            }
+            throw e
+        }
+
         val hwList = mutableListOf<Homework>()
-        var hwCounter = 1
         for (day in schedule) {
             for (lesson in day.lessons) {
                 if (!lesson.homework.isNullOrBlank() || lesson.attachments.isNotEmpty()) {
+                    val stableId = "hw_${day.date}_${lesson.num}_${lesson.subject.hashCode().toString(16)}"
                     hwList.add(
                         Homework(
-                            id = "hw_${day.date}_${lesson.num}_${hwCounter++}",
+                            id = stableId,
                             subject = lesson.subject,
                             text = lesson.homework ?: "Материалы к уроку",
                             date = day.date,
-                            isCompleted = false,
+                            isCompleted = cacheStore?.isHomeworkCompleted(stableId) ?: false,
                             attachments = lesson.attachments
                         )
                     )
                 }
             }
         }
+
+        if (hwList.isNotEmpty()) {
+            cacheStore?.saveHomeworkCache(hwList)
+        }
         return hwList
     }
+
+    fun toggleHomework(id: String): Boolean {
+        return cacheStore?.toggleHomeworkCompleted(id) ?: false
+    }
+
+    fun getCachedSchedule(weekOffset: Int): List<DaySchedule>? = cacheStore?.getScheduleCache(weekOffset)
+    fun getCachedHomework(): List<Homework>? = cacheStore?.getHomeworkCache()
+    fun getCachedGrades(): Pair<List<SubjectSummary>, List<AcademicPeriod>>? = cacheStore?.getGradesCache()
+    fun getLastSyncTime(): Long = cacheStore?.getLastSyncTime() ?: 0L
 
     suspend fun getMarks(days: String? = null): List<SubjectSummary> {
         val currentSession = _session.value
@@ -223,7 +262,9 @@ class DiaryRepository(
                 _session.value = updatedS
             }
             if (webMarks.isSuccess && webMarks.getOrNull()?.isNotEmpty() == true) {
-                return webMarks.getOrThrow()
+                val list = webMarks.getOrThrow()
+                saveGradesWithNotificationCheck(list, getPeriods())
+                return list
             }
             if (webMarks.exceptionOrNull() is com.pixelschool.app.data.remote.SessionExpiredException) {
                 throw webMarks.exceptionOrNull()!!
@@ -241,7 +282,9 @@ class DiaryRepository(
         )
 
         if (marksResult.isSuccess && marksResult.getOrNull()?.isNotEmpty() == true) {
-            return marksResult.getOrThrow()
+            val list = marksResult.getOrThrow()
+            saveGradesWithNotificationCheck(list, getPeriods())
+            return list
         }
         if (marksResult.exceptionOrNull() is com.pixelschool.app.data.remote.SessionExpiredException) {
             throw marksResult.exceptionOrNull()!!
@@ -274,13 +317,48 @@ class DiaryRepository(
                 }.sortedByDescending { it.average }
 
                 if (summaries.isNotEmpty()) {
+                    saveGradesWithNotificationCheck(summaries, getPeriods())
                     return summaries
                 }
             }
         } catch (_: Exception) {}
 
+        // 4. Offline cache fallback
+        val cached = cacheStore?.getGradesCache()?.first
+        if (cached != null && cached.isNotEmpty()) {
+            return cached
+        }
+
         throw marksResult.exceptionOrNull()
             ?: lastError
             ?: Exception("Не удалось загрузить сводную ведомость оценок")
+    }
+
+    private fun saveGradesWithNotificationCheck(
+        newGrades: List<SubjectSummary>,
+        periods: List<AcademicPeriod>
+    ) {
+        val oldGrades = cacheStore?.getGradesCache()?.first ?: emptyList()
+        cacheStore?.saveGradesCache(newGrades, periods)
+
+        if (context != null && oldGrades.isNotEmpty()) {
+            val oldKeys = oldGrades.flatMap { s ->
+                s.marks.map { "${s.subject}_${it.date}_${it.value}" }
+            }.toSet()
+
+            val addedMarks = mutableListOf<Pair<String, Mark>>()
+            newGrades.forEach { s ->
+                s.marks.forEach { m ->
+                    val key = "${s.subject}_${m.date}_${m.value}"
+                    if (!oldKeys.contains(key)) {
+                        addedMarks.add(Pair(s.subject, m))
+                    }
+                }
+            }
+
+            if (addedMarks.isNotEmpty()) {
+                com.pixelschool.app.notification.NotificationHelper.notifyNewMarks(context, addedMarks)
+            }
+        }
     }
 }
