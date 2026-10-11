@@ -271,16 +271,17 @@ fun GosuslugiAuthDialog(
                             settings.javaScriptEnabled = true
                             settings.domStorageEnabled = true
 
-                            // Complete modern mobile Google Chrome emulation matching official app
-                            val chromeUserAgent = "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.6723.102 Mobile Safari/537.36"
+                            // Modern Pixel 8 / Chrome 128 mobile emulation matching guidelines
+                            val chromeUserAgent = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36"
                             settings.userAgentString = chromeUserAgent
 
                             val chromeHeaders = mapOf(
                                 "User-Agent" to chromeUserAgent,
-                                "sec-ch-ua" to "\"Chromium\";v=\"130\", \"Google Chrome\";v=\"130\", \"Not?A_Brand\";v=\"99\"",
+                                "sec-ch-ua" to "\"Chromium\";v=\"128\", \"Google Chrome\";v=\"128\", \"Not?A_Brand\";v=\"99\"",
                                 "sec-ch-ua-mobile" to "?1",
                                 "sec-ch-ua-platform" to "\"Android\"",
-                                "Accept-Language" to "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7"
+                                "Accept-Language" to "ru-RU,ru;q=0.9",
+                                "Referer" to "https://edu.rk.gov.ru/?show=home"
                             )
 
                             val cookieManager = CookieManager.getInstance()
@@ -307,66 +308,71 @@ fun GosuslugiAuthDialog(
                                         return
                                     }
 
-                                    // 3. Detect journal web interface on page finished
-                                    val isTargetDiary = url.contains("/journal-app") ||
+                                    // 3. Detect journal web interface on redirect or page load
+                                    val isTargetDiary = url.contains("?show=home") ||
+                                            url.contains("/journal-app") ||
                                             url.contains("/journal-student") ||
                                             (url.contains("edu.rk.gov.ru") && !url.contains("/authorize") &&
-                                             !url.contains("esia.gosuslugi.ru") && !url.contains("flow=v2"))
+                                             !url.contains("esia.gosuslugi.ru") && !url.contains("flow=v2") &&
+                                             !url.contains("/journal-esia"))
 
-                                    if (isPageFinished && isTargetDiary) {
+                                    if (isTargetDiary) {
                                         val cookies = getSessionCookies()
+                                        val phpsessid = TokenExtractor.extractPhpsessid(cookies)
+                                        val cookieToken = TokenExtractor.extractAuthTokenFromCookies(cookies)
 
-                                        evaluateJavascript(
-                                            """
-                                            (function() {
-                                                var t = '';
-                                                var v = '';
-                                                try {
-                                                    t = localStorage.getItem('token') || localStorage.getItem('auth_token') || sessionStorage.getItem('token') || '';
-                                                    v = localStorage.getItem('vendor') || sessionStorage.getItem('vendor') || '';
-                                                } catch(e) {}
-                                                var u = '';
-                                                try {
-                                                    var el = document.querySelector('.user-name, .b-dropdown__user, .header-user__name, .m-user__name');
-                                                    if (el) u = el.innerText.trim();
-                                                } catch(e) {}
-                                                return JSON.stringify({ token: t, vendor: v, user: u });
-                                            })()
-                                            """.trimIndent()
-                                        ) { jsResult ->
-                                            if (hasCompleted) return@evaluateJavascript
+                                        if (!phpsessid.isNullOrBlank() || !cookieToken.isNullOrBlank() || isPageFinished) {
+                                            evaluateJavascript(
+                                                """
+                                                (function() {
+                                                    var t = '';
+                                                    var v = '';
+                                                    try {
+                                                        t = localStorage.getItem('token') || localStorage.getItem('auth_token') || sessionStorage.getItem('token') || '';
+                                                        v = localStorage.getItem('vendor') || sessionStorage.getItem('vendor') || '';
+                                                    } catch(e) {}
+                                                    var u = '';
+                                                    try {
+                                                        var el = document.querySelector('.user-name, .b-dropdown__user, .header-user__name, .m-user__name, .user_name, .user-profile__name');
+                                                        if (el) u = el.innerText.trim();
+                                                    } catch(e) {}
+                                                    return JSON.stringify({ token: t, vendor: v, user: u });
+                                                })()
+                                                """.trimIndent()
+                                            ) { jsResult ->
+                                                if (hasCompleted) return@evaluateJavascript
 
-                                            var jsToken: String? = null
-                                            var jsVendor: String? = null
-                                            var jsUser: String? = null
-                                            try {
-                                                if (!jsResult.isNullOrBlank() && jsResult != "null") {
-                                                    val clean = if (jsResult.startsWith("\"") && jsResult.endsWith("\"")) {
-                                                        JSONObject(JSONObject("{\"d\":$jsResult}").getString("d"))
-                                                    } else {
-                                                        JSONObject(jsResult)
+                                                var jsToken: String? = null
+                                                var jsVendor: String? = null
+                                                var jsUser: String? = null
+                                                try {
+                                                    if (!jsResult.isNullOrBlank() && jsResult != "null") {
+                                                        val clean = if (jsResult.startsWith("\"") && jsResult.endsWith("\"")) {
+                                                            JSONObject(JSONObject("{\"d\":$jsResult}").getString("d"))
+                                                        } else {
+                                                            JSONObject(jsResult)
+                                                        }
+                                                        jsToken = clean.optString("token").ifEmpty { null }
+                                                        jsVendor = clean.optString("vendor").ifEmpty { null }
+                                                        jsUser = clean.optString("user").ifEmpty { null }
                                                     }
-                                                    jsToken = clean.optString("token").ifEmpty { null }
-                                                    jsVendor = clean.optString("vendor").ifEmpty { null }
-                                                    jsUser = clean.optString("user").ifEmpty { null }
+                                                } catch (_: Exception) {}
+
+                                                val finalAuth = capturedAuth
+                                                    ?: if (!jsToken.isNullOrBlank()) {
+                                                        AuthCredentials(token = jsToken, vendor = jsVendor ?: "edu")
+                                                    } else if (!cookieToken.isNullOrBlank()) {
+                                                        AuthCredentials(token = cookieToken, vendor = "edu")
+                                                    } else if (cookies.isNotBlank()) {
+                                                        AuthCredentials(token = "web_session", vendor = "edu")
+                                                    } else null
+
+                                                val finalUser = jsUser ?: capturedUserName
+
+                                                if (finalAuth != null && (!phpsessid.isNullOrBlank() || !cookieToken.isNullOrBlank() || isPageFinished)) {
+                                                    hasCompleted = true
+                                                    onAuthCompleted(finalAuth, cookies, finalUser)
                                                 }
-                                            } catch (_: Exception) {}
-
-                                            val cookieToken = TokenExtractor.extractAuthTokenFromCookies(cookies)
-                                            val finalAuth = capturedAuth
-                                                ?: if (!jsToken.isNullOrBlank()) {
-                                                    AuthCredentials(token = jsToken, vendor = jsVendor ?: "edu")
-                                                } else if (!cookieToken.isNullOrBlank()) {
-                                                    AuthCredentials(token = cookieToken, vendor = "edu")
-                                                } else if (cookies.isNotBlank()) {
-                                                    AuthCredentials(token = "web_session", vendor = "edu")
-                                                } else null
-
-                                            val finalUser = jsUser ?: capturedUserName
-
-                                            if (finalAuth != null) {
-                                                hasCompleted = true
-                                                onAuthCompleted(finalAuth, cookies, finalUser)
                                             }
                                         }
                                     }
@@ -405,8 +411,8 @@ fun GosuslugiAuthDialog(
                                 }
                             }
 
-                            // Official mobile flow=v2 from ru.eljur.region: generates v_token and full API session
-                            loadUrl("https://edu.rk.gov.ru/journal-esia-region-action?flow=v2", chromeHeaders)
+                            // Regional Crimean portal ESIA authorization entrypoint
+                            loadUrl("https://edu.rk.gov.ru/journal-esia-action/", chromeHeaders)
                         }
                     },
                     modifier = Modifier.fillMaxSize()
