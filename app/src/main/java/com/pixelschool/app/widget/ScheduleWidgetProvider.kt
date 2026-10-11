@@ -80,7 +80,12 @@ class ScheduleWidgetProvider : AppWidgetProvider() {
                 R.id.widget_lesson_4
             )
 
-            if (lessons.isEmpty()) {
+            if (scheduleList == null) {
+                views.setTextViewText(R.id.widget_empty, "Откройте дневник для загрузки")
+                views.setViewVisibility(R.id.widget_empty, View.VISIBLE)
+                views.setViewVisibility(R.id.widget_lessons_container, View.GONE)
+            } else if (lessons.isEmpty()) {
+                views.setTextViewText(R.id.widget_empty, "Уроков на сегодня нет 🎉")
                 views.setViewVisibility(R.id.widget_empty, View.VISIBLE)
                 views.setViewVisibility(R.id.widget_lessons_container, View.GONE)
             } else {

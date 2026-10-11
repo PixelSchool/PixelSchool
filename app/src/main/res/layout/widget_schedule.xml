@@ -33,7 +33,7 @@
             android:textSize="12sp" />
     </LinearLayout>
 
-    <View
+    <ImageView
         android:layout_width="match_parent"
         android:layout_height="1dp"
         android:layout_marginTop="8dp"
@@ -68,7 +68,8 @@
             android:maxLines="1"
             android:textColor="#E1E2E8"
             android:textSize="13sp"
-            android:paddingVertical="2dp"
+            android:paddingTop="2dp"
+            android:paddingBottom="2dp"
             android:visibility="gone" />
 
         <TextView
@@ -79,7 +80,8 @@
             android:maxLines="1"
             android:textColor="#E1E2E8"
             android:textSize="13sp"
-            android:paddingVertical="2dp"
+            android:paddingTop="2dp"
+            android:paddingBottom="2dp"
             android:visibility="gone" />
 
         <TextView
@@ -90,7 +92,8 @@
             android:maxLines="1"
             android:textColor="#E1E2E8"
             android:textSize="13sp"
-            android:paddingVertical="2dp"
+            android:paddingTop="2dp"
+            android:paddingBottom="2dp"
             android:visibility="gone" />
 
         <TextView
@@ -101,7 +104,8 @@
             android:maxLines="1"
             android:textColor="#E1E2E8"
             android:textSize="13sp"
-            android:paddingVertical="2dp"
+            android:paddingTop="2dp"
+            android:paddingBottom="2dp"
             android:visibility="gone" />
     </LinearLayout>
 
