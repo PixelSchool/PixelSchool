@@ -93,9 +93,9 @@ fun MarksScreen(
         if (isYearTab) {
             subjects.map { s ->
                 s.copy(
-                    marks = s.marks.sortedNewestFirst(),
+                    marks = s.marks.sortedOldestFirst(),
                     periodMarks = s.periodMarks.map { pm ->
-                        pm.copy(marks = pm.marks.sortedNewestFirst())
+                        pm.copy(marks = pm.marks.sortedOldestFirst())
                     }
                 )
             }
@@ -105,16 +105,16 @@ fun MarksScreen(
                     val pm = s.periodMarks[selectedTabIndex]
                     s.copy(
                         average = pm.average,
-                        marks = pm.marks.sortedNewestFirst(),
+                        marks = pm.marks.sortedOldestFirst(),
                         finalMark = pm.finalMark,
-                        periodMarks = s.periodMarks.map { it.copy(marks = it.marks.sortedNewestFirst()) }
+                        periodMarks = s.periodMarks.map { it.copy(marks = it.marks.sortedOldestFirst()) }
                     )
                 } else {
                     s.copy(
                         average = 0f,
                         marks = emptyList(),
                         finalMark = null,
-                        periodMarks = s.periodMarks.map { it.copy(marks = it.marks.sortedNewestFirst()) }
+                        periodMarks = s.periodMarks.map { it.copy(marks = it.marks.sortedOldestFirst()) }
                     )
                 }
             }
@@ -410,7 +410,7 @@ fun MarksScreen(
                     }
                 } else if (subject.marks.isNotEmpty()) {
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        subject.marks.forEach { mark ->
+                        subject.marks.sortedNewestFirst().forEach { mark ->
                             Surface(
                                 shape = RoundedCornerShape(16.dp),
                                 color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f),
@@ -725,6 +725,11 @@ private fun parseAcademicDateWeight(dateStr: String): Int {
         }
     }
     return 0
+}
+
+private fun List<Mark>.sortedOldestFirst(): List<Mark> {
+    if (size <= 1) return this
+    return this.sortedBy { parseAcademicDateWeight(it.date) }
 }
 
 private fun List<Mark>.sortedNewestFirst(): List<Mark> {
