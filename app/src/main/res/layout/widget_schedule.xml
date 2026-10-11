@@ -44,7 +44,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Сегодня"
-                android:textColor="#F2EFF4"
+                android:textColor="@color/widget_text_primary"
                 android:textSize="13sp"
                 android:textStyle="bold" />
 
@@ -54,7 +54,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginLeft="6dp"
                 android:text=""
-                android:textColor="#938F99"
+                android:textColor="@color/widget_text_secondary"
                 android:textSize="11sp" />
         </LinearLayout>
 
@@ -76,7 +76,7 @@
             android:layout_height="wrap_content"
             android:background="@drawable/widget_badge_bg"
             android:text="PixelSchool"
-            android:textColor="#D0BCFF"
+            android:textColor="@color/widget_primary_accent"
             android:textSize="11sp"
             android:textStyle="bold"
             android:paddingLeft="8dp"
@@ -91,7 +91,7 @@
         android:layout_height="1dp"
         android:layout_marginTop="8dp"
         android:layout_marginBottom="4dp"
-        android:background="#282A34" />
+        android:background="@color/widget_divider" />
 
     <!-- Empty / Weekend State -->
     <LinearLayout
@@ -116,7 +116,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="Выходной день"
-            android:textColor="#F2EFF4"
+            android:textColor="@color/widget_text_primary"
             android:textSize="14sp"
             android:textStyle="bold"
             android:gravity="center" />
@@ -127,7 +127,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"
             android:text="Можно отдохнуть и набраться сил перед учёбой"
-            android:textColor="#938F99"
+            android:textColor="@color/widget_text_secondary"
             android:textSize="11sp"
             android:gravity="center" />
     </LinearLayout>

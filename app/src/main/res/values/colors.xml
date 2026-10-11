@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Default colors (API < 31 fallback) -->
+    <color name="widget_surface">#1A1C22</color>
+    <color name="widget_surface_stroke">#2D303B</color>
+    <color name="widget_pill_bg">#2B2D38</color>
+    <color name="widget_badge_bg">#362C54</color>
+    <color name="widget_room_badge_bg">#252732</color>
+    <color name="widget_primary_accent">#D0BCFF</color>
+    <color name="widget_text_primary">#F2EFF4</color>
+    <color name="widget_text_secondary">#938F99</color>
+    <color name="widget_divider">#282A34</color>
+</resources>
