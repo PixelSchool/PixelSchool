@@ -53,10 +53,20 @@ class DiaryRepository(
             return MockDataProvider.getWeekSchedule()
         }
 
+        var activeSession = currentSession
+        if (activeSession.studentId.isBlank() && activeSession.token.isNotBlank() && activeSession.token != "web_session") {
+            val enriched = apiClient.enrichWithRules(activeSession)
+            if (enriched.studentId.isNotBlank()) {
+                sessionStore.saveSession(enriched)
+                _session.value = enriched
+                activeSession = enriched
+            }
+        }
+
         val remoteResult = apiClient.fetchDiary(
-            token = currentSession.token,
-            vendor = currentSession.vendor,
-            studentId = currentSession.studentId.ifBlank { null },
+            token = activeSession.token,
+            vendor = activeSession.vendor,
+            studentId = activeSession.studentId.ifBlank { null },
             cookies = sessionStore.getCookies()
         )
 

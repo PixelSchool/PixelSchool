@@ -41,12 +41,6 @@ class SessionStore(context: Context) {
         val isDemo = prefs.getBoolean(KEY_IS_DEMO, false)
         val vendor = prefs.getString(KEY_VENDOR, "edu") ?: "edu"
 
-        // Auto-cleanup legacy corrupted sessions where vendor was set to "edu" for a real account
-        if (!isDemo && vendor == "edu" && !token.startsWith("web_session")) {
-            clear()
-            return null
-        }
-
         return UserSession(
             token = token,
             vendor = vendor,
