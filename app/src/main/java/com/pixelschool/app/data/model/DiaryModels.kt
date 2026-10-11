@@ -1,0 +1,64 @@
+package com.pixelschool.app.data.model
+
+import kotlinx.serialization.Serializable
+
+@Serializable
+data class UserSession(
+    val token: String,
+    val vendor: String = "edu",
+    val login: String = "",
+    val userTitle: String = "",
+    val schoolTitle: String = "",
+    val isDemo: Boolean = false
+)
+
+@Serializable
+data class DaySchedule(
+    val date: String,            // "12.10.2026"
+    val dayOfWeek: String,       // "Понедельник"
+    val lessons: List<Lesson> = emptyList(),
+    val isHoliday: Boolean = false,
+    val holidayName: String? = null
+)
+
+@Serializable
+data class Lesson(
+    val num: Int,
+    val startTime: String,       // "08:30"
+    val endTime: String,         // "09:15"
+    val subject: String,         // "Алгебра"
+    val room: String = "",       // "Каб. 24"
+    val teacher: String = "",    // "Иванова А. С."
+    val topic: String? = null,
+    val homework: String? = null,
+    val marks: List<Mark> = emptyList()
+)
+
+@Serializable
+data class Mark(
+    val value: String,           // "5", "4+", "Н"
+    val weight: Int = 1,
+    val date: String = "",
+    val comment: String? = null,
+    val isControl: Boolean = false
+) {
+    val numericValue: Float?
+        get() = value.take(1).toFloatOrNull()
+}
+
+@Serializable
+data class Homework(
+    val id: String,
+    val subject: String,
+    val text: String,
+    val date: String,            // "13.10.2026"
+    val isCompleted: Boolean = false
+)
+
+@Serializable
+data class SubjectSummary(
+    val subject: String,
+    val average: Float,          // 4.67
+    val marks: List<Mark> = emptyList(),
+    val finalMark: String? = null
+)

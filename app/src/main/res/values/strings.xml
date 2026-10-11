@@ -1,0 +1,12 @@
+<resources>
+    <string name="app_name">PixelSchool</string>
+    <string name="title_schedule">Расписание</string>
+    <string name="title_homework">Задания</string>
+    <string name="title_marks">Оценки</string>
+    <string name="title_profile">Профиль</string>
+    <string name="login_with_esia">Войти через Госуслуги</string>
+    <string name="demo_mode">Попробовать демо</string>
+    <string name="empty_schedule">В этот день уроков нет</string>
+    <string name="empty_homework">Все задания выполнены!</string>
+    <string name="empty_marks">Оценок пока нет</string>
+</resources>
