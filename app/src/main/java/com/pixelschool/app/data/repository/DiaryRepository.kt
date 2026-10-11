@@ -4,8 +4,10 @@ import com.pixelschool.app.data.local.MockDataProvider
 import com.pixelschool.app.data.local.SessionStore
 import com.pixelschool.app.data.model.DaySchedule
 import com.pixelschool.app.data.model.Homework
+import com.pixelschool.app.data.model.Mark
 import com.pixelschool.app.data.model.SubjectSummary
 import com.pixelschool.app.data.model.UserSession
+import com.pixelschool.app.data.remote.AuthCredentials
 import com.pixelschool.app.data.remote.EljurApiClient
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -26,12 +28,12 @@ class DiaryRepository(
         return demo
     }
 
-    suspend fun loginWithWebSession(
-        tokenOrVToken: String?,
+    suspend fun loginWithSession(
+        auth: AuthCredentials?,
         cookies: String?,
         fallbackUserName: String? = null
     ): Result<UserSession> {
-        val result = apiClient.resolveSession(tokenOrVToken, cookies, fallbackUserName)
+        val result = apiClient.resolveSession(auth, cookies, fallbackUserName)
         if (result.isSuccess) {
             val s = result.getOrThrow()
             sessionStore.saveSession(s, cookies)
@@ -54,13 +56,15 @@ class DiaryRepository(
         val remoteResult = apiClient.fetchDiary(
             token = currentSession.token,
             vendor = currentSession.vendor,
+            studentId = currentSession.studentId.ifBlank { null },
             cookies = sessionStore.getCookies()
         )
 
-        return if (remoteResult.isSuccess && remoteResult.getOrNull()?.isNotEmpty() == true) {
+        return if (remoteResult.isSuccess) {
             remoteResult.getOrThrow()
         } else {
-            MockDataProvider.getWeekSchedule()
+            throw remoteResult.exceptionOrNull()
+                ?: Exception("Не удалось загрузить расписание из регионального дневника")
         }
     }
 
@@ -78,7 +82,7 @@ class DiaryRepository(
                 if (!lesson.homework.isNullOrBlank()) {
                     hwList.add(
                         Homework(
-                            id = "hw_${hwCounter++}",
+                            id = "hw_${day.date}_${lesson.num}_${hwCounter++}",
                             subject = lesson.subject,
                             text = lesson.homework,
                             date = day.date,
@@ -88,7 +92,7 @@ class DiaryRepository(
                 }
             }
         }
-        return if (hwList.isNotEmpty()) hwList else MockDataProvider.getHomeworkList()
+        return hwList
     }
 
     suspend fun getMarks(): List<SubjectSummary> {
@@ -97,8 +101,21 @@ class DiaryRepository(
             return MockDataProvider.getSubjectsSummary()
         }
 
-        val schedule = getSchedule()
-        val subjectMarksMap = mutableMapOf<String, MutableList<com.pixelschool.app.data.model.Mark>>()
+        // Try getting official term marks first
+        val marksResult = apiClient.fetchMarks(
+            token = currentSession.token,
+            vendor = currentSession.vendor,
+            studentId = currentSession.studentId.ifBlank { null },
+            cookies = sessionStore.getCookies()
+        )
+
+        if (marksResult.isSuccess && marksResult.getOrNull()?.isNotEmpty() == true) {
+            return marksResult.getOrThrow()
+        }
+
+        // Fallback: aggregate marks from loaded schedule lessons
+        val schedule = try { getSchedule() } catch (_: Exception) { emptyList() }
+        val subjectMarksMap = mutableMapOf<String, MutableList<Mark>>()
         for (day in schedule) {
             for (lesson in day.lessons) {
                 if (lesson.marks.isNotEmpty()) {
@@ -109,7 +126,7 @@ class DiaryRepository(
         }
 
         if (subjectMarksMap.isEmpty()) {
-            return MockDataProvider.getSubjectsSummary()
+            return emptyList()
         }
 
         return subjectMarksMap.map { (subject, marks) ->

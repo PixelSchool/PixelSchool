@@ -17,6 +17,7 @@ class SessionStore(context: Context) {
         private const val KEY_SCHOOL_TITLE = "key_school_title"
         private const val KEY_IS_DEMO = "key_is_demo"
         private const val KEY_COOKIES = "key_cookies"
+        private const val KEY_STUDENT_ID = "key_student_id"
     }
 
     fun saveSession(session: UserSession, cookies: String? = null) {
@@ -27,6 +28,7 @@ class SessionStore(context: Context) {
             putString(KEY_USER_TITLE, session.userTitle)
             putString(KEY_SCHOOL_TITLE, session.schoolTitle)
             putBoolean(KEY_IS_DEMO, session.isDemo)
+            putString(KEY_STUDENT_ID, session.studentId)
             if (cookies != null) {
                 putString(KEY_COOKIES, cookies)
             }
@@ -36,13 +38,23 @@ class SessionStore(context: Context) {
 
     fun getSession(): UserSession? {
         val token = prefs.getString(KEY_TOKEN, null) ?: return null
+        val isDemo = prefs.getBoolean(KEY_IS_DEMO, false)
+        val vendor = prefs.getString(KEY_VENDOR, "edu") ?: "edu"
+
+        // Auto-cleanup legacy corrupted sessions where vendor was set to "edu" for a real account
+        if (!isDemo && vendor == "edu" && !token.startsWith("web_session")) {
+            clear()
+            return null
+        }
+
         return UserSession(
             token = token,
-            vendor = prefs.getString(KEY_VENDOR, "edu") ?: "edu",
+            vendor = vendor,
             login = prefs.getString(KEY_LOGIN, "") ?: "",
             userTitle = prefs.getString(KEY_USER_TITLE, "") ?: "",
             schoolTitle = prefs.getString(KEY_SCHOOL_TITLE, "") ?: "",
-            isDemo = prefs.getBoolean(KEY_IS_DEMO, false)
+            isDemo = isDemo,
+            studentId = prefs.getString(KEY_STUDENT_ID, "") ?: ""
         )
     }
 

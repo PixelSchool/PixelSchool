@@ -6,6 +6,7 @@ import com.pixelschool.app.data.model.DaySchedule
 import com.pixelschool.app.data.model.Homework
 import com.pixelschool.app.data.model.SubjectSummary
 import com.pixelschool.app.data.model.UserSession
+import com.pixelschool.app.data.remote.AuthCredentials
 import com.pixelschool.app.data.repository.DiaryRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -73,11 +74,11 @@ class MainViewModel(
         loadData()
     }
 
-    fun loginWithWebSession(tokenOrVToken: String?, cookies: String?, userName: String? = null) {
+    fun loginWithSession(auth: AuthCredentials?, cookies: String?, userName: String? = null) {
         viewModelScope.launch {
             _isLoading.value = true
             _errorMessage.value = null
-            val res = repository.loginWithWebSession(tokenOrVToken, cookies, userName)
+            val res = repository.loginWithSession(auth, cookies, userName)
             if (res.isSuccess) {
                 loadData()
             } else {

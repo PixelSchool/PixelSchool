@@ -4,65 +4,73 @@ import android.net.Uri
 import android.util.Base64
 import org.json.JSONObject
 
+data class AuthCredentials(
+    val vToken: String? = null,
+    val token: String? = null,
+    val vendor: String? = null,
+    val login: String? = null
+) {
+    val isValid: Boolean
+        get() = !vToken.isNullOrBlank() || (!token.isNullOrBlank() && !vendor.isNullOrBlank())
+}
+
 object TokenExtractor {
 
-    private val JWT_PARAM_NAMES = listOf("code", "token", "auth_token", "v_token", "access_token")
-    private val JWT_REGEX = Regex("(?:code|token|auth_token|v_token|access_token)=([A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)?)")
-    private val GENERIC_JWT_REGEX = Regex("(eyJ[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}(?:\\.[A-Za-z0-9_-]+)?)")
-
     /**
-     * Generic extractor that catches tokens from URL redirects:
-     * - checks standard param names: code, token, auth_token, v_token, access_token
-     * - detects any parameter starting with "eyJ" (JWT prefix)
-     * - checks URL fragments
-     * - applies regex fallback for encoded or complex URLs
+     * Extracts authentication parameters mirroring ru.eljur.region official app:
+     * - checks "v_token"
+     * - checks "token" + "vendor" + "login"
+     * NOTE: Does NOT treat ESIA authorization "code" as final auth token,
+     * allowing the web server to finish the exchange.
      */
-    fun extractToken(url: String?): String? {
+    fun extractAuth(url: String?): AuthCredentials? {
         if (url.isNullOrBlank()) return null
-
-        try {
+        return try {
             val uri = Uri.parse(url)
 
-            // 1. Check known parameter names
-            for (name in JWT_PARAM_NAMES) {
-                val value = uri.getQueryParameter(name)
-                if (!value.isNullOrBlank()) {
-                    return value
-                }
-            }
+            val vToken = uri.getQueryParameter("v_token")
+                ?: extractParamFromFragment(uri, "v_token")
 
-            // 2. Scan all query parameters for any value starting with "eyJ" (universal JWT detection)
-            for (name in uri.queryParameterNames) {
-                val value = uri.getQueryParameter(name)
-                if (value != null && value.startsWith("eyJ")) {
-                    return value
-                }
-            }
+            val token = uri.getQueryParameter("token")
+                ?: uri.getQueryParameter("auth_token")
+                ?: extractParamFromFragment(uri, "token")
 
-            // 3. Scan URL fragment
-            val fragment = uri.fragment
-            if (!fragment.isNullOrBlank()) {
-                val parts = fragment.split("&")
-                for (p in parts) {
-                    val kv = p.split("=")
-                    if (kv.size == 2) {
-                        val k = kv[0]
-                        val v = kv[1]
-                        if (JWT_PARAM_NAMES.contains(k) || v.startsWith("eyJ")) {
-                            return v
-                        }
-                    }
-                }
-            }
+            val vendor = uri.getQueryParameter("vendor")
+                ?: extractParamFromFragment(uri, "vendor")
 
-            // 4. Regex fallback on raw URL string
-            val match = JWT_REGEX.find(url) ?: GENERIC_JWT_REGEX.find(url)
-            if (match != null) {
-                return match.groupValues[1]
-            }
-        } catch (_: Exception) {}
+            val login = uri.getQueryParameter("login")
+                ?: extractParamFromFragment(uri, "login")
 
+            if (!vToken.isNullOrBlank()) {
+                AuthCredentials(vToken = vToken)
+            } else if (!token.isNullOrBlank() && !vendor.isNullOrBlank()) {
+                AuthCredentials(token = token, vendor = vendor, login = login)
+            } else {
+                null
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun extractParamFromFragment(uri: Uri, paramName: String): String? {
+        val fragment = uri.fragment ?: return null
+        for (part in fragment.split("&")) {
+            val kv = part.split("=")
+            if (kv.size == 2 && kv[0] == paramName) {
+                return kv[1]
+            }
+        }
         return null
+    }
+
+    /**
+     * Helper to check if URL is the ESIA callback step (code=...)
+     * where we should allow the WebView to continue to edu.rk.gov.ru.
+     */
+    fun isEsiaCallbackCode(url: String?): Boolean {
+        if (url == null) return false
+        return url.contains("code=") && !url.contains("v_token=")
     }
 
     /**
