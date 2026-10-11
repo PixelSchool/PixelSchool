@@ -54,10 +54,21 @@ class DiaryRepository(
             return MockDataProvider.getAcademicPeriods()
         }
 
+        var activeSession = currentSession
+        if (activeSession.studentId.isBlank()) {
+            val enriched = apiClient.enrichWithRules(activeSession, sessionStore.getCookies())
+            if (enriched.studentId.isNotBlank() || (enriched.token.isNotBlank() && enriched.token != activeSession.token)) {
+                sessionStore.saveSession(enriched)
+                _session.value = enriched
+                activeSession = enriched
+            }
+        }
+
         val res = apiClient.fetchPeriods(
-            token = currentSession.token,
-            vendor = currentSession.vendor,
-            studentId = currentSession.studentId.ifBlank { null }
+            token = activeSession.token,
+            vendor = activeSession.vendor,
+            studentId = activeSession.studentId.ifBlank { null },
+            cookies = sessionStore.getCookies()
         )
         return res.getOrDefault(apiClient.generateDefaultAcademicPeriods())
     }
@@ -69,9 +80,9 @@ class DiaryRepository(
         }
 
         var activeSession = currentSession
-        if (activeSession.studentId.isBlank() && activeSession.token.isNotBlank() && activeSession.token != "web_session") {
-            val enriched = apiClient.enrichWithRules(activeSession)
-            if (enriched.studentId.isNotBlank()) {
+        if (activeSession.studentId.isBlank()) {
+            val enriched = apiClient.enrichWithRules(activeSession, sessionStore.getCookies())
+            if (enriched.studentId.isNotBlank() || (enriched.token.isNotBlank() && enriched.token != activeSession.token)) {
                 sessionStore.saveSession(enriched)
                 _session.value = enriched
                 activeSession = enriched
@@ -129,6 +140,16 @@ class DiaryRepository(
             return MockDataProvider.getSubjectsSummary()
         }
 
+        var activeSession = currentSession
+        if (activeSession.studentId.isBlank()) {
+            val enriched = apiClient.enrichWithRules(activeSession, sessionStore.getCookies())
+            if (enriched.studentId.isNotBlank() || (enriched.token.isNotBlank() && enriched.token != activeSession.token)) {
+                sessionStore.saveSession(enriched)
+                _session.value = enriched
+                activeSession = enriched
+            }
+        }
+
         var targetDays = days
         if (targetDays.isNullOrBlank()) {
             val periods = getPeriods()
@@ -136,13 +157,16 @@ class DiaryRepository(
                 ?: periods.firstOrNull()?.rangeDays
         }
 
+        val cookies = sessionStore.getCookies()
+        val effectiveStudentId = activeSession.studentId.ifBlank { null }
+
         // Try getting official term marks first
         val marksResult = apiClient.fetchMarks(
-            token = currentSession.token,
-            vendor = currentSession.vendor,
-            studentId = currentSession.studentId.ifBlank { null },
+            token = activeSession.token,
+            vendor = activeSession.vendor,
+            studentId = effectiveStudentId,
             days = targetDays,
-            cookies = sessionStore.getCookies()
+            cookies = cookies
         )
 
         if (marksResult.isSuccess && marksResult.getOrNull()?.isNotEmpty() == true) {
@@ -174,9 +198,8 @@ class DiaryRepository(
         }
 
         // Fallback: web scraping
-        val cookies = sessionStore.getCookies()
         if (!cookies.isNullOrEmpty()) {
-            val webMarks = apiClient.scrapeMarksFromWeb(cookies)
+            val webMarks = apiClient.scrapeMarksFromWeb(cookies, effectiveStudentId)
             if (webMarks.isSuccess && webMarks.getOrNull()?.isNotEmpty() == true) {
                 return webMarks.getOrThrow()
             }

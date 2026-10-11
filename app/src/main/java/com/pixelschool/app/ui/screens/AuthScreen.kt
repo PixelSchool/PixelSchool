@@ -246,7 +246,10 @@ fun GosuslugiAuthDialog(
                             if (!hasCompleted) {
                                 hasCompleted = true
                                 val cookies = getSessionCookies()
-                                val auth = capturedAuth ?: if (cookies.isNotBlank()) {
+                                val cookieToken = TokenExtractor.extractAuthTokenFromCookies(cookies)
+                                val auth = capturedAuth ?: if (!cookieToken.isNullOrBlank()) {
+                                    AuthCredentials(token = cookieToken, vendor = "edu")
+                                } else if (cookies.isNotBlank()) {
                                     AuthCredentials(token = "web_session", vendor = "edu")
                                 } else null
                                 onAuthCompleted(auth, cookies, capturedUserName)
@@ -341,9 +344,12 @@ fun GosuslugiAuthDialog(
                                                 }
                                             } catch (_: Exception) {}
 
+                                            val cookieToken = TokenExtractor.extractAuthTokenFromCookies(cookies)
                                             val finalAuth = capturedAuth
-                                                ?: if (!jsToken.isNullOrBlank() && !jsVendor.isNullOrBlank()) {
-                                                    AuthCredentials(token = jsToken, vendor = jsVendor)
+                                                ?: if (!jsToken.isNullOrBlank()) {
+                                                    AuthCredentials(token = jsToken, vendor = jsVendor ?: "edu")
+                                                } else if (!cookieToken.isNullOrBlank()) {
+                                                    AuthCredentials(token = cookieToken, vendor = "edu")
                                                 } else if (cookies.isNotBlank()) {
                                                     AuthCredentials(token = "web_session", vendor = "edu")
                                                 } else null
