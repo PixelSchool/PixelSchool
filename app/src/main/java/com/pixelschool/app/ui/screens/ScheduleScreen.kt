@@ -152,7 +152,7 @@ fun ScheduleScreen(
                             .fillMaxWidth()
                             .padding(vertical = 4.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertAlignment
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
                             text = "${selectedDay.dayOfWeek}, ${selectedDay.date}",

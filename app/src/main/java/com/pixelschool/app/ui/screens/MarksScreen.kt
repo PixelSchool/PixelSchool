@@ -74,7 +74,7 @@ fun MarksScreen(
                     .fillMaxWidth()
                     .padding(24.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertAlignment
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 Column {
                     Text(
@@ -104,7 +104,7 @@ fun MarksScreen(
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertAlignment
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.Star,
@@ -164,7 +164,7 @@ fun MarksScreen(
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertAlignment
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
@@ -204,10 +204,10 @@ fun MarksScreen(
                         ) {
                             Row(
                                 modifier = Modifier.padding(14.dp),
-                                verticalAlignment = Alignment.CenterVertAlignment,
+                                verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Row(verticalAlignment = Alignment.CenterVertAlignment) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
                                     ExpressiveGradeBadge(value = mark.value)
                                     Spacer(modifier = Modifier.width(12.dp))
                                     Column {
@@ -259,7 +259,7 @@ fun SubjectMarkCard(
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertAlignment
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
                     text = summary.subject,
