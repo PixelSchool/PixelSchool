@@ -26,8 +26,12 @@ class DiaryRepository(
         return demo
     }
 
-    suspend fun loginWithVToken(vToken: String, cookies: String? = null): Result<UserSession> {
-        val result = apiClient.fetchSessionFromVToken(vToken)
+    suspend fun loginWithWebSession(
+        tokenOrVToken: String?,
+        cookies: String?,
+        fallbackUserName: String? = null
+    ): Result<UserSession> {
+        val result = apiClient.resolveSession(tokenOrVToken, cookies, fallbackUserName)
         if (result.isSuccess) {
             val s = result.getOrThrow()
             sessionStore.saveSession(s, cookies)
@@ -66,7 +70,6 @@ class DiaryRepository(
             return MockDataProvider.getHomeworkList()
         }
 
-        // Extracts homework from the diary schedule
         val schedule = getSchedule()
         val hwList = mutableListOf<Homework>()
         var hwCounter = 1
@@ -94,7 +97,6 @@ class DiaryRepository(
             return MockDataProvider.getSubjectsSummary()
         }
 
-        // Calculate subject summaries from schedule marks
         val schedule = getSchedule()
         val subjectMarksMap = mutableMapOf<String, MutableList<com.pixelschool.app.data.model.Mark>>()
         for (day in schedule) {

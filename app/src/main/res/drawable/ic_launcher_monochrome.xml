@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group>
+        <!-- Flat silhouette of the emblem for Android 13+ Themed Icons -->
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M54,34 L84,45 L54,56 L24,45 Z" />
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M34,49.5 L34,62 C34,69 74,69 74,62 L74,49.5 L54,57 Z" />
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M78,45 L80,45 L81,64 L77,64 Z" />
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M75.5,64 L82.5,64 L82.5,71 L75.5,71 Z" />
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M48,68h12v4h-12z M42,74h24v4h-24z M38,80h14v3h-14z M56,80h14v3h-14z" />
+    </group>
+</vector>
