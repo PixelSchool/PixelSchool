@@ -356,7 +356,8 @@ class EljurApiClient(
     suspend fun resolveSession(
         auth: AuthCredentials?,
         cookies: String?,
-        fallbackUserName: String? = null
+        fallbackUserName: String? = null,
+        fallbackSchoolName: String? = null
     ): Result<UserSession> = withContext(Dispatchers.IO) {
         try {
             val cookieToken = TokenExtractor.extractAuthTokenFromCookies(cookies)
@@ -381,7 +382,36 @@ class EljurApiClient(
                                 val session = extractUserVendor(json, fallbackUserName)
                                 if (session != null) {
                                     val enriched = enrichWithRules(session, cookies)
-                                    return@withContext Result.success(enriched)
+                                    val profileResult = scrapeUserProfile(cookies)
+                                    val finalName = if (enriched.userTitle.isNotBlank() && enriched.userTitle != "Ученик") {
+                                        enriched.userTitle
+                                    } else if (profileResult.name.isNotBlank()) {
+                                        profileResult.name
+                                    } else {
+                                        fallbackUserName ?: "Ученик"
+                                    }
+                                    val finalSchool = if (enriched.schoolTitle.isNotBlank() && enriched.schoolTitle != "ГИС РК «Образование»") {
+                                        enriched.schoolTitle
+                                    } else if (profileResult.school.isNotBlank()) {
+                                        profileResult.school
+                                    } else {
+                                        fallbackSchoolName ?: "Республика Крым"
+                                    }
+                                    val finalStudentId = if (enriched.studentId.isNotBlank()) enriched.studentId else profileResult.studentId
+                                    val finalFirst = if (enriched.firstName.isNotBlank()) enriched.firstName else profileResult.firstName
+                                    val finalLast = if (enriched.lastName.isNotBlank()) enriched.lastName else profileResult.lastName
+                                    val finalSchoolN = if (enriched.schoolName.isNotBlank()) enriched.schoolName else profileResult.school.ifBlank { fallbackSchoolName ?: "" }
+
+                                    return@withContext Result.success(
+                                        enriched.copy(
+                                            userTitle = finalName,
+                                            schoolTitle = finalSchool,
+                                            studentId = finalStudentId,
+                                            firstName = finalFirst,
+                                            lastName = finalLast,
+                                            schoolName = finalSchoolN
+                                        )
+                                    )
                                 }
                             }
                         } catch (_: Exception) {}
@@ -398,10 +428,40 @@ class EljurApiClient(
                     vendor = directVendor,
                     login = auth?.login ?: "",
                     userTitle = fallbackUserName ?: "Ученик",
-                    schoolTitle = "ГИС РК «Образование»"
+                    schoolTitle = fallbackSchoolName ?: "ГИС РК «Образование»",
+                    schoolName = fallbackSchoolName ?: ""
                 )
                 val enriched = enrichWithRules(baseSession, cookies)
-                return@withContext Result.success(enriched)
+                val profileResult = scrapeUserProfile(cookies)
+                val finalName = if (enriched.userTitle.isNotBlank() && enriched.userTitle != "Ученик") {
+                    enriched.userTitle
+                } else if (profileResult.name.isNotBlank()) {
+                    profileResult.name
+                } else {
+                    fallbackUserName ?: "Ученик"
+                }
+                val finalSchool = if (enriched.schoolTitle.isNotBlank() && enriched.schoolTitle != "ГИС РК «Образование»") {
+                    enriched.schoolTitle
+                } else if (profileResult.school.isNotBlank()) {
+                    profileResult.school
+                } else {
+                    fallbackSchoolName ?: "Республика Крым"
+                }
+                val finalStudentId = if (enriched.studentId.isNotBlank()) enriched.studentId else profileResult.studentId
+                val finalFirst = if (enriched.firstName.isNotBlank()) enriched.firstName else profileResult.firstName
+                val finalLast = if (enriched.lastName.isNotBlank()) enriched.lastName else profileResult.lastName
+                val finalSchoolN = if (enriched.schoolName.isNotBlank()) enriched.schoolName else profileResult.school.ifBlank { fallbackSchoolName ?: "" }
+
+                return@withContext Result.success(
+                    enriched.copy(
+                        userTitle = finalName,
+                        schoolTitle = finalSchool,
+                        studentId = finalStudentId,
+                        firstName = finalFirst,
+                        lastName = finalLast,
+                        schoolName = finalSchoolN
+                    )
+                )
             }
 
             // Flow 3: Session cookies present
@@ -420,7 +480,36 @@ class EljurApiClient(
                                 val session = extractUserVendor(json, fallbackUserName)
                                 if (session != null) {
                                     val enriched = enrichWithRules(session, cookies)
-                                    return@withContext Result.success(enriched)
+                                    val profileResult = scrapeUserProfile(cookies)
+                                    val finalName = if (enriched.userTitle.isNotBlank() && enriched.userTitle != "Ученик") {
+                                        enriched.userTitle
+                                    } else if (profileResult.name.isNotBlank()) {
+                                        profileResult.name
+                                    } else {
+                                        fallbackUserName ?: "Ученик"
+                                    }
+                                    val finalSchool = if (enriched.schoolTitle.isNotBlank() && enriched.schoolTitle != "ГИС РК «Образование»") {
+                                        enriched.schoolTitle
+                                    } else if (profileResult.school.isNotBlank()) {
+                                        profileResult.school
+                                    } else {
+                                        fallbackSchoolName ?: "Республика Крым"
+                                    }
+                                    val finalStudentId = if (enriched.studentId.isNotBlank()) enriched.studentId else profileResult.studentId
+                                    val finalFirst = if (enriched.firstName.isNotBlank()) enriched.firstName else profileResult.firstName
+                                    val finalLast = if (enriched.lastName.isNotBlank()) enriched.lastName else profileResult.lastName
+                                    val finalSchoolN = if (enriched.schoolName.isNotBlank()) enriched.schoolName else profileResult.school.ifBlank { fallbackSchoolName ?: "" }
+
+                                    return@withContext Result.success(
+                                        enriched.copy(
+                                            userTitle = finalName,
+                                            schoolTitle = finalSchool,
+                                            studentId = finalStudentId,
+                                            firstName = finalFirst,
+                                            lastName = finalLast,
+                                            schoolName = finalSchoolN
+                                        )
+                                    )
                                 }
                             }
                         } catch (_: Exception) {}
@@ -433,13 +522,10 @@ class EljurApiClient(
                     vendor = "edu",
                     login = auth?.login ?: "",
                     userTitle = fallbackUserName ?: "Ученик",
-                    schoolTitle = "ГИС РК «Образование»"
+                    schoolTitle = fallbackSchoolName ?: "ГИС РК «Образование»",
+                    schoolName = fallbackSchoolName ?: ""
                 )
                 val enriched = enrichWithRules(baseSession, cookies)
-                if (enriched.userTitle.isNotBlank() && enriched.userTitle != "Ученик" &&
-                    enriched.schoolTitle.isNotBlank() && enriched.schoolTitle != "ГИС РК «Образование»") {
-                    return@withContext Result.success(enriched)
-                }
 
                 // Scrape profile info from https://edu.rk.gov.ru/?show=home and /journal-app
                 val profileResult = scrapeUserProfile(cookies)
@@ -456,7 +542,7 @@ class EljurApiClient(
                 } else if (profileResult.school.isNotBlank()) {
                     profileResult.school
                 } else {
-                    "Республика Крым"
+                    fallbackSchoolName ?: "Республика Крым"
                 }
 
                 val finalStudentId = if (enriched.studentId.isNotBlank()) {
@@ -465,10 +551,17 @@ class EljurApiClient(
                     profileResult.studentId
                 }
 
+                val finalFirst = if (enriched.firstName.isNotBlank()) enriched.firstName else profileResult.firstName
+                val finalLast = if (enriched.lastName.isNotBlank()) enriched.lastName else profileResult.lastName
+                val finalSchoolN = if (enriched.schoolName.isNotBlank()) enriched.schoolName else profileResult.school.ifBlank { fallbackSchoolName ?: "" }
+
                 val rawSession = enriched.copy(
                     userTitle = finalName,
                     schoolTitle = finalSchool,
-                    studentId = finalStudentId
+                    studentId = finalStudentId,
+                    firstName = finalFirst,
+                    lastName = finalLast,
+                    schoolName = finalSchoolN
                 )
                 return@withContext Result.success(rawSession)
             }
@@ -481,18 +574,84 @@ class EljurApiClient(
 
     data class UserProfileScrapeResult(
         val name: String = "",
+        val firstName: String = "",
+        val lastName: String = "",
         val school: String = "",
         val studentId: String = ""
     )
+
+    private fun extractProfileFromHtmlScripts(html: String): UserProfileScrapeResult {
+        val patterns = listOf(
+            Regex("""(?:gon|window\.gon)\s*=\s*(\{.+?\});""", RegexOption.DOT_MATCHES_ALL),
+            Regex("""(?:gon\.user|window\.gon\.user)\s*=\s*(\{.+?\});""", RegexOption.DOT_MATCHES_ALL),
+            Regex("""(?:gon\.profile|window\.gon\.profile)\s*=\s*(\{.+?\});""", RegexOption.DOT_MATCHES_ALL)
+        )
+        for (pattern in patterns) {
+            val match = pattern.find(html) ?: continue
+            try {
+                val jsonStr = match.groupValues[1]
+                val json = JSONObject(jsonStr)
+                val userObj = json.optJSONObject("user") ?: json.optJSONObject("student") ?: json.optJSONObject("profile") ?: json
+                val schoolObj = json.optJSONObject("school") ?: json.optJSONObject("organization")
+
+                var first = userObj.optString("first_name").ifBlank { userObj.optString("firstName") }
+                var last = userObj.optString("last_name").ifBlank { userObj.optString("lastName") }
+                var full = userObj.optString("name").ifBlank {
+                    userObj.optString("title").ifBlank {
+                        userObj.optString("full_name").ifBlank {
+                            userObj.optString("fullName")
+                        }
+                    }
+                }
+                if (full.isBlank() && (first.isNotBlank() || last.isNotBlank())) {
+                    full = "$last $first".trim()
+                } else if (full.isNotBlank() && first.isBlank() && last.isBlank()) {
+                    val parts = full.split(" ").filter { it.isNotBlank() }
+                    if (parts.size >= 2) {
+                        last = parts[0]
+                        first = parts[1]
+                    }
+                }
+
+                val school = schoolObj?.optString("name")?.ifBlank {
+                    schoolObj.optString("title")
+                } ?: json.optString("school_title").ifBlank {
+                    json.optString("school_name").ifBlank {
+                        userObj.optString("school")
+                    }
+                }
+
+                val studentId = userObj.optString("id").ifBlank {
+                    userObj.optString("student_id").ifBlank {
+                        json.optString("student_id")
+                    }
+                }
+
+                if (full.isNotBlank() || school.isNotBlank() || studentId.isNotBlank()) {
+                    return UserProfileScrapeResult(
+                        name = full,
+                        firstName = first,
+                        lastName = last,
+                        school = school,
+                        studentId = studentId
+                    )
+                }
+            } catch (_: Exception) {}
+        }
+        return UserProfileScrapeResult()
+    }
 
     fun scrapeUserProfile(cookies: String?): UserProfileScrapeResult {
         if (cookies.isNullOrBlank()) return UserProfileScrapeResult()
         val candidateUrls = listOf(
             "$baseUrl/?show=home",
             "$baseUrl/journal-app",
+            "$baseUrl/journal-student-grades-action",
             baseUrl
         )
         var scrapedName = ""
+        var scrapedFirstName = ""
+        var scrapedLastName = ""
         var scrapedSchool = ""
         var scrapedStudentId = ""
 
@@ -502,6 +661,21 @@ class EljurApiClient(
                 val req = buildRequest(url, cookies, isJson = false)
                 val resp = client.newCall(req).execute()
                 val html = resp.body?.string() ?: continue
+
+                // 1. Try script extraction
+                val scriptResult = extractProfileFromHtmlScripts(html)
+                if (scriptResult.name.isNotBlank() && scrapedName.isBlank()) {
+                    scrapedName = scriptResult.name
+                    scrapedFirstName = scriptResult.firstName
+                    scrapedLastName = scriptResult.lastName
+                }
+                if (scriptResult.school.isNotBlank() && scrapedSchool.isBlank()) {
+                    scrapedSchool = scriptResult.school
+                }
+                if (scriptResult.studentId.isNotBlank() && scrapedStudentId.isBlank()) {
+                    scrapedStudentId = scriptResult.studentId
+                }
+
                 val doc = Jsoup.parse(html)
 
                 if (scrapedStudentId.isBlank()) {
@@ -521,6 +695,11 @@ class EljurApiClient(
                     val rawName = nameElem?.text()?.trim()
                     if (!rawName.isNullOrBlank() && rawName != "Ученик" && rawName != "Вход" && rawName.length >= 2) {
                         scrapedName = rawName
+                        val parts = rawName.split(" ").filter { it.isNotBlank() }
+                        if (parts.size >= 2) {
+                            scrapedLastName = parts[0]
+                            scrapedFirstName = parts[1]
+                        }
                     }
                 }
 
@@ -538,7 +717,13 @@ class EljurApiClient(
             } catch (_: Exception) {}
         }
 
-        return UserProfileScrapeResult(scrapedName, scrapedSchool, scrapedStudentId)
+        return UserProfileScrapeResult(
+            name = scrapedName,
+            firstName = scrapedFirstName,
+            lastName = scrapedLastName,
+            school = scrapedSchool,
+            studentId = scrapedStudentId
+        )
     }
 
     fun getCurrentWeekRange(date: Date = Date()): String {
@@ -1611,18 +1796,19 @@ class EljurApiClient(
                 for (th in headerCells) {
                     val colspan = th.attr("colspan").toIntOrNull() ?: 1
                     val text = th.text().trim().lowercase()
+                    val cleanText = text.replace(Regex("""\s+"""), " ")
                     val qIdx = when {
-                        text.contains("1") && (text.contains("четв") || text.contains("пер") || text.contains("полугод") || text.contains("триместр")) -> 0
-                        text.contains("i") && !text.contains("ii") && !text.contains("iv") && (text.contains("четв") || text.contains("пер") || text.contains("полугод")) -> 0
-                        text.contains("2") && (text.contains("четв") || text.contains("пер") || text.contains("полугод") || text.contains("триместр")) -> 1
-                        text.contains("ii") && !text.contains("iii") && (text.contains("четв") || text.contains("пер") || text.contains("полугод")) -> 1
-                        text.contains("3") && (text.contains("четв") || text.contains("пер") || text.contains("полугод") || text.contains("триместр")) -> 2
-                        text.contains("iii") && (text.contains("четв") || text.contains("пер") || text.contains("полугод")) -> 2
-                        text.contains("4") && (text.contains("четв") || text.contains("пер") || text.contains("полугод") || text.contains("триместр")) -> 3
-                        text.contains("iv") && (text.contains("четв") || text.contains("пер") || text.contains("полугод")) -> 3
+                        Regex("""\b(1|i|1-я|1-й|перв)\b|^(1|i|1-я|1-й)$|1\s*ч""").containsMatchIn(cleanText) &&
+                            !Regex("""\b(2|ii|3|iii|4|iv)\b""").containsMatchIn(cleanText) -> 0
+                        Regex("""\b(2|ii|2-я|2-й|втор)\b|^(2|ii|2-я|2-й)$|2\s*ч""").containsMatchIn(cleanText) &&
+                            !Regex("""\b(1|i|3|iii|4|iv)\b""").containsMatchIn(cleanText) -> 1
+                        Regex("""\b(3|iii|3-я|3-й|трет)\b|^(3|iii|3-я|3-й)$|3\s*ч""").containsMatchIn(cleanText) &&
+                            !Regex("""\b(1|i|2|ii|4|iv)\b""").containsMatchIn(cleanText) -> 2
+                        Regex("""\b(4|iv|4-я|4-й|четв)\b|^(4|iv|4-я|4-й)$|4\s*ч""").containsMatchIn(cleanText) &&
+                            !Regex("""\b(1|i|2|ii|3|iii)\b""").containsMatchIn(cleanText) -> 3
                         else -> null
                     }
-                    val isYear = text.contains("год") || text.contains("итог") || text.contains("экзамен") || text.contains("аттестат")
+                    val isYear = cleanText.contains("год") || cleanText.contains("итог") || cleanText.contains("экзамен") || cleanText.contains("аттестат") || cleanText.contains("year") || cleanText == "г"
 
                     for (c in 0 until colspan) {
                         colMapping[currentColIdx + c] = ColumnMeta(quarterIndex = qIdx, isYear = isYear)
@@ -1777,7 +1963,7 @@ class EljurApiClient(
 
                 val allSubjectMarks = quarters.flatMap { it.marks }
 
-                if (allSubjectMarks.isNotEmpty() || yearlyAverage > 0f || yearlyFinalMark != null) {
+                if (allSubjectMarks.isNotEmpty() || yearlyAverage > 0f || yearlyFinalMark != null || firstHeaderRow != null) {
                     val existing = subjectMap[subjectName]
                     if (existing != null) {
                         val mergedPeriods = (0..3).map { q ->

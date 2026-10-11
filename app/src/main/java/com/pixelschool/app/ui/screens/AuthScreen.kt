@@ -56,7 +56,7 @@ import com.pixelschool.app.data.remote.TokenExtractor
 @Composable
 fun AuthScreen(
     onLoginDemo: () -> Unit,
-    onLoginWithSession: (credentials: AuthCredentials?, cookies: String?, userName: String?) -> Unit,
+    onLoginWithSession: (credentials: AuthCredentials?, cookies: String?, userName: String?, schoolName: String?) -> Unit,
     isLoading: Boolean,
     errorMessage: String?,
     modifier: Modifier = Modifier
@@ -174,9 +174,9 @@ fun AuthScreen(
     if (showWebViewDialog) {
         GosuslugiAuthDialog(
             onDismiss = { showWebViewDialog = false },
-            onAuthCompleted = { credentials, cookies, userName ->
+            onAuthCompleted = { credentials, cookies, userName, schoolName ->
                 showWebViewDialog = false
-                onLoginWithSession(credentials, cookies, userName)
+                onLoginWithSession(credentials, cookies, userName, schoolName)
             }
         )
     }
@@ -186,10 +186,11 @@ fun AuthScreen(
 @Composable
 fun GosuslugiAuthDialog(
     onDismiss: () -> Unit,
-    onAuthCompleted: (credentials: AuthCredentials?, cookies: String?, userName: String?) -> Unit
+    onAuthCompleted: (credentials: AuthCredentials?, cookies: String?, userName: String?, schoolName: String?) -> Unit
 ) {
     var capturedAuth by remember { mutableStateOf<AuthCredentials?>(null) }
     var capturedUserName by remember { mutableStateOf<String?>(null) }
+    var capturedSchoolName by remember { mutableStateOf<String?>(null) }
     var hasCompleted by remember { mutableStateOf(false) }
 
     fun getSessionCookies(): String {
@@ -254,7 +255,11 @@ fun GosuslugiAuthDialog(
                                 } else if (cookies.isNotBlank()) {
                                     AuthCredentials(token = "web_session", vendor = "edu")
                                 } else null
-                                onAuthCompleted(auth, cookies, capturedUserName)
+                                val jwtUser = TokenExtractor.extractUserTitleFromJwt(auth?.token ?: cookieToken)
+                                val jwtSchool = TokenExtractor.extractSchoolFromJwt(auth?.token ?: cookieToken)
+                                val uName = capturedUserName ?: jwtUser
+                                val sName = capturedSchoolName ?: jwtSchool
+                                onAuthCompleted(auth, cookies, uName, sName)
                             }
                         },
                         shape = RoundedCornerShape(12.dp)
@@ -298,7 +303,9 @@ fun GosuslugiAuthDialog(
                                         capturedAuth = auth
                                         hasCompleted = true
                                         val cookies = getSessionCookies()
-                                        onAuthCompleted(auth, cookies, capturedUserName)
+                                        val jwtUser = TokenExtractor.extractUserTitleFromJwt(auth.token)
+                                        val jwtSchool = TokenExtractor.extractSchoolFromJwt(auth.token)
+                                        onAuthCompleted(auth, cookies, capturedUserName ?: jwtUser, capturedSchoolName ?: jwtSchool)
                                         return
                                     }
 
@@ -333,10 +340,25 @@ fun GosuslugiAuthDialog(
                                                     } catch(e) {}
                                                     var u = '';
                                                     try {
-                                                        var el = document.querySelector('.user-name, .b-dropdown__user, .header-user__name, .m-user__name, .user_name, .user-profile__name');
-                                                        if (el) u = el.innerText.trim();
+                                                        if (window.gon && window.gon.user) {
+                                                            u = window.gon.user.name || window.gon.user.title || '';
+                                                        }
+                                                        if (!u) {
+                                                            var el = document.querySelector('.user-name, .b-dropdown__user, .header-user__name, .m-user__name, .user_name, .user-profile__name, .student-name, .b-header__user, .user__name, .h-user, .user-title, div.user-info .name, span.user-name');
+                                                            if (el) u = el.innerText.trim();
+                                                        }
                                                     } catch(e) {}
-                                                    return JSON.stringify({ token: t, vendor: v, user: u });
+                                                    var s = '';
+                                                    try {
+                                                        if (window.gon && window.gon.school) {
+                                                            s = window.gon.school.title || window.gon.school.name || '';
+                                                        }
+                                                        if (!s) {
+                                                            var sel = document.querySelector('.school-title, .header-school__title, .m-logo__subtitle, .school_title, .school-name, .b-dropdown__school, .b-school__title, .school, .school__title, .school__name, div.school-info, .header__school');
+                                                            if (sel) s = sel.innerText.trim();
+                                                        }
+                                                    } catch(e) {}
+                                                    return JSON.stringify({ token: t, vendor: v, user: u, school: s });
                                                 })()
                                                 """.trimIndent()
                                             ) { jsResult ->
@@ -345,6 +367,7 @@ fun GosuslugiAuthDialog(
                                                 var jsToken: String? = null
                                                 var jsVendor: String? = null
                                                 var jsUser: String? = null
+                                                var jsSchool: String? = null
                                                 try {
                                                     if (!jsResult.isNullOrBlank() && jsResult != "null") {
                                                         val clean = if (jsResult.startsWith("\"") && jsResult.endsWith("\"")) {
@@ -355,6 +378,7 @@ fun GosuslugiAuthDialog(
                                                         jsToken = clean.optString("token").ifEmpty { null }
                                                         jsVendor = clean.optString("vendor").ifEmpty { null }
                                                         jsUser = clean.optString("user").ifEmpty { null }
+                                                        jsSchool = clean.optString("school").ifEmpty { null }
                                                     }
                                                 } catch (_: Exception) {}
 
@@ -367,11 +391,14 @@ fun GosuslugiAuthDialog(
                                                         AuthCredentials(token = "web_session", vendor = "edu")
                                                     } else null
 
-                                                val finalUser = jsUser ?: capturedUserName
+                                                val jwtUser = TokenExtractor.extractUserTitleFromJwt(finalAuth?.token ?: cookieToken)
+                                                val jwtSchool = TokenExtractor.extractSchoolFromJwt(finalAuth?.token ?: cookieToken)
+                                                val finalUser = jsUser ?: capturedUserName ?: jwtUser
+                                                val finalSchool = jsSchool ?: capturedSchoolName ?: jwtSchool
 
                                                 if (finalAuth != null && (!phpsessid.isNullOrBlank() || !cookieToken.isNullOrBlank() || isPageFinished)) {
                                                     hasCompleted = true
-                                                    onAuthCompleted(finalAuth, cookies, finalUser)
+                                                    onAuthCompleted(finalAuth, cookies, finalUser, finalSchool)
                                                 }
                                             }
                                         }
