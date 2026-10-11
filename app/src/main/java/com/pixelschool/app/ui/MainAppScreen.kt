@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Logout
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.School
 import androidx.compose.material.icons.rounded.Warning
@@ -30,6 +29,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -86,8 +86,7 @@ fun MainAppScreen(
         Scaffold(
             topBar = {
                 AppTopBar(
-                    title = currentScreen.title,
-                    onRefresh = if (currentScreen != Screen.Profile) { { viewModel.loadData() } } else null
+                    title = currentScreen.title
                 )
             },
             bottomBar = {
@@ -189,10 +188,12 @@ fun MainAppScreen(
                 }
 
                 val isRefreshing by viewModel.isRefreshing.collectAsState()
+                val pullToRefreshState = rememberPullToRefreshState()
 
                 PullToRefreshBox(
                     isRefreshing = isRefreshing,
                     onRefresh = { viewModel.refreshData() },
+                    state = pullToRefreshState,
                     modifier = Modifier.fillMaxSize()
                 ) {
                     Crossfade(
@@ -451,8 +452,7 @@ fun ProfileScreen(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppTopBar(
-    title: String,
-    onRefresh: (() -> Unit)? = null
+    title: String
 ) {
     CenterAlignedTopAppBar(
         title = {
@@ -460,16 +460,6 @@ fun AppTopBar(
                 text = title,
                 style = MaterialTheme.typography.titleLarge
             )
-        },
-        actions = {
-            if (onRefresh != null) {
-                IconButton(onClick = onRefresh) {
-                    Icon(
-                        imageVector = Icons.Default.Refresh,
-                        contentDescription = "Обновить"
-                    )
-                }
-            }
         },
         colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
             containerColor = MaterialTheme.colorScheme.surface

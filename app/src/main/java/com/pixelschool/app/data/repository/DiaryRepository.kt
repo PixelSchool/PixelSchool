@@ -129,7 +129,12 @@ class DiaryRepository(
         val currentSession = _session.value
             ?: throw IllegalStateException("Сессия не найдена. Требуется авторизация.")
         if (currentSession.isDemo) {
-            return MockDataProvider.getWeekSchedule()
+            val demoSchedule = MockDataProvider.getWeekSchedule()
+            cacheStore?.saveScheduleCache(weekOffset, demoSchedule)
+            if (context != null) {
+                com.pixelschool.app.widget.ScheduleWidgetProvider.updateAllWidgets(context)
+            }
+            return demoSchedule
         }
 
         var activeSession = currentSession

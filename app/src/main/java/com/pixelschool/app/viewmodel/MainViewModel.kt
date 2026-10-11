@@ -16,6 +16,7 @@ import com.pixelschool.app.ui.screens.HomeworkDateUtils
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.Calendar
 
@@ -140,80 +141,84 @@ class MainViewModel(
         )
     }
 
-    fun loadData() {
-        viewModelScope.launch {
-            val curSession = session.value
-            if (curSession == null) {
+    private suspend fun performLoadData(showLoadingIndicator: Boolean = true) {
+        val curSession = session.value
+        if (curSession == null) {
+            _schedule.value = emptyList()
+            _homework.value = emptyList()
+            _marks.value = emptyList()
+            _periods.value = emptyList()
+            if (showLoadingIndicator) _isLoading.value = false
+            return
+        }
+
+        if (showLoadingIndicator) _isLoading.value = true
+        _errorMessage.value = null
+        _errorState.value = null
+        var errorToDisplay: String? = null
+        var errorUiToDisplay: ErrorUiState? = null
+
+        // Restore/verify student profile (name and school) if not fully loaded
+        try {
+            repository.ensureProfileLoaded()
+        } catch (_: Exception) {}
+
+        try {
+            _schedule.value = repository.getSchedule(_currentWeekOffset.value)
+            _homework.value = repository.getHomework(_currentWeekOffset.value)
+        } catch (e: Exception) {
+            if (e is SessionExpiredException) {
+                repository.logout()
+                _errorMessage.value = e.message ?: "Сессия устарела. Требуется повторный вход."
+                _errorState.value = e.toErrorUiState("Сессия устарела. Требуется повторный вход.")
+                if (showLoadingIndicator) _isLoading.value = false
+                return
+            }
+            if (!curSession.isDemo) {
                 _schedule.value = emptyList()
                 _homework.value = emptyList()
+            }
+            errorToDisplay = e.message ?: "Не удалось загрузить дневник из региональной системы"
+            errorUiToDisplay = e.toErrorUiState("Не удалось загрузить дневник")
+        }
+
+        try {
+            val resolvedPeriods = repository.getPeriods()
+            _periods.value = resolvedPeriods
+
+            val nowMonth = Calendar.getInstance().get(Calendar.MONTH) // 8=Sep, 9=Oct, 10=Nov
+            val defaultIdx = if (nowMonth in 8..10) 0 else {
+                resolvedPeriods.indexOfFirst { it.isActive }.takeIf { it >= 0 } ?: 0
+            }
+            _selectedPeriodIndex.value = defaultIdx
+
+            val activeRange = resolvedPeriods.getOrNull(defaultIdx)?.rangeDays
+            _marks.value = repository.getMarks(activeRange)
+        } catch (e: Exception) {
+            if (e is SessionExpiredException) {
+                repository.logout()
+                _errorMessage.value = e.message ?: "Сессия устарела. Требуется повторный вход."
+                _errorState.value = e.toErrorUiState("Сессия устарела. Требуется повторный вход.")
+                if (showLoadingIndicator) _isLoading.value = false
+                return
+            }
+            if (!curSession.isDemo) {
                 _marks.value = emptyList()
-                _periods.value = emptyList()
-                _isLoading.value = false
-                return@launch
             }
-
-            _isLoading.value = true
-            _errorMessage.value = null
-            _errorState.value = null
-            var errorToDisplay: String? = null
-            var errorUiToDisplay: ErrorUiState? = null
-
-            // Restore/verify student profile (name and school) if not fully loaded
-            try {
-                repository.ensureProfileLoaded()
-            } catch (_: Exception) {}
-
-            try {
-                _schedule.value = repository.getSchedule(_currentWeekOffset.value)
-                _homework.value = repository.getHomework(_currentWeekOffset.value)
-            } catch (e: Exception) {
-                if (e is SessionExpiredException) {
-                    repository.logout()
-                    _errorMessage.value = e.message ?: "Сессия устарела. Требуется повторный вход."
-                    _errorState.value = e.toErrorUiState("Сессия устарела. Требуется повторный вход.")
-                    _isLoading.value = false
-                    return@launch
-                }
-                if (!curSession.isDemo) {
-                    _schedule.value = emptyList()
-                    _homework.value = emptyList()
-                }
-                errorToDisplay = e.message ?: "Не удалось загрузить дневник из региональной системы"
-                errorUiToDisplay = e.toErrorUiState("Не удалось загрузить дневник")
+            if (errorToDisplay == null) {
+                errorToDisplay = e.message ?: "Не удалось загрузить оценки"
+                errorUiToDisplay = e.toErrorUiState("Не удалось загрузить оценки")
             }
+        }
 
-            try {
-                val resolvedPeriods = repository.getPeriods()
-                _periods.value = resolvedPeriods
+        _errorMessage.value = errorToDisplay
+        _errorState.value = errorUiToDisplay
+        if (showLoadingIndicator) _isLoading.value = false
+    }
 
-                val nowMonth = Calendar.getInstance().get(Calendar.MONTH) // 8=Sep, 9=Oct, 10=Nov
-                val defaultIdx = if (nowMonth in 8..10) 0 else {
-                    resolvedPeriods.indexOfFirst { it.isActive }.takeIf { it >= 0 } ?: 0
-                }
-                _selectedPeriodIndex.value = defaultIdx
-
-                val activeRange = resolvedPeriods.getOrNull(defaultIdx)?.rangeDays
-                _marks.value = repository.getMarks(activeRange)
-            } catch (e: Exception) {
-                if (e is SessionExpiredException) {
-                    repository.logout()
-                    _errorMessage.value = e.message ?: "Сессия устарела. Требуется повторный вход."
-                    _errorState.value = e.toErrorUiState("Сессия устарела. Требуется повторный вход.")
-                    _isLoading.value = false
-                    return@launch
-                }
-                if (!curSession.isDemo) {
-                    _marks.value = emptyList()
-                }
-                if (errorToDisplay == null) {
-                    errorToDisplay = e.message ?: "Не удалось загрузить оценки"
-                    errorUiToDisplay = e.toErrorUiState("Не удалось загрузить оценки")
-                }
-            }
-
-            _errorMessage.value = errorToDisplay
-            _errorState.value = errorUiToDisplay
-            _isLoading.value = false
+    fun loadData() {
+        viewModelScope.launch {
+            performLoadData(showLoadingIndicator = true)
         }
     }
 
@@ -307,11 +312,17 @@ class MainViewModel(
     }
 
     fun refreshData() {
+        if (_isRefreshing.value) return
         viewModelScope.launch {
             _isRefreshing.value = true
+            val startTime = System.currentTimeMillis()
             try {
-                loadData()
+                performLoadData(showLoadingIndicator = false)
             } finally {
+                val elapsed = System.currentTimeMillis() - startTime
+                if (elapsed < 600) {
+                    delay(600 - elapsed)
+                }
                 _isRefreshing.value = false
             }
         }
