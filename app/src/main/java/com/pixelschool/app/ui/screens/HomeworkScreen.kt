@@ -43,7 +43,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.foundation.layout.width
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.pixelschool.app.data.model.DaySchedule
 import com.pixelschool.app.data.model.Homework
 import com.pixelschool.app.ui.components.HomeworkExpressiveCard
@@ -63,7 +65,7 @@ object HomeworkDateUtils {
     )
 
     fun calculateDefaultWeekOffset(now: LocalDate = LocalDate.now()): Int {
-        return if (now.dayOfWeek == DayOfWeek.SUNDAY) 1 else 0
+        return if (now.dayOfWeek == DayOfWeek.SUNDAY) -1 else 0
     }
 
     fun calculateDefaultDayIndex(now: LocalDate = LocalDate.now()): Int {
@@ -77,7 +79,7 @@ object HomeworkDateUtils {
 
     fun getMondayForOffset(weekOffset: Int, now: LocalDate = LocalDate.now()): LocalDate {
         val currentMonday = now.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
-        return currentMonday.plusWeeks(weekOffset.toLong())
+        return currentMonday.plusWeeks(-weekOffset.toLong())
     }
 
     fun formatWeekRange(monday: LocalDate): String {
@@ -176,18 +178,19 @@ fun HomeworkScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(top = 8.dp)
+            .padding(top = 2.dp)
     ) {
         // Week Navigator Bar
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 4.dp),
+                .padding(horizontal = 16.dp, vertical = 2.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(
-                onClick = { onChangeWeekOffset(-1) }
+                onClick = { onChangeWeekOffset(1) },
+                modifier = Modifier.size(32.dp)
             ) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Rounded.ArrowBackIos,
@@ -197,74 +200,56 @@ fun HomeworkScreen(
                 )
             }
 
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.clickable {
-                    onResetWeekOffset()
-                    selectedDayIndex = HomeworkDateUtils.calculateDefaultDayIndex()
-                }
-            ) {
-                Text(
-                    text = HomeworkDateUtils.formatWeekRange(monday),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    text = when (weekOffset) {
-                        0 -> "Текущая неделя"
-                        1 -> "Следующая неделя"
-                        -1 -> "Предыдущая неделя"
-                        else -> if (weekOffset > 0) "+$weekOffset нед." else "$weekOffset нед."
-                    },
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                val defaultOffset = HomeworkDateUtils.calculateDefaultWeekOffset()
-                val isDefaultActive = weekOffset == defaultOffset && selectedDayIndex == HomeworkDateUtils.calculateDefaultDayIndex()
-
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = if (isDefaultActive)
-                        MaterialTheme.colorScheme.surfaceContainerHigh
-                    else
-                        MaterialTheme.colorScheme.primaryContainer,
-                    modifier = Modifier.clickable {
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                modifier = Modifier
+                    .height(30.dp)
+                    .clickable {
                         onResetWeekOffset()
                         selectedDayIndex = HomeworkDateUtils.calculateDefaultDayIndex()
                     }
+            ) {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier.padding(horizontal = 12.dp)
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    Text(
+                        text = HomeworkDateUtils.formatWeekRange(monday),
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+            }
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                val defaultOffset = HomeworkDateUtils.calculateDefaultWeekOffset()
+                val isDefaultActive = weekOffset == defaultOffset && selectedDayIndex == HomeworkDateUtils.calculateDefaultDayIndex()
+
+                if (!isDefaultActive) {
+                    IconButton(
+                        onClick = {
+                            onResetWeekOffset()
+                            selectedDayIndex = HomeworkDateUtils.calculateDefaultDayIndex()
+                        },
+                        modifier = Modifier.size(32.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.Today,
-                            contentDescription = null,
-                            tint = if (isDefaultActive)
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            else
-                                MaterialTheme.colorScheme.onPrimaryContainer,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Text(
-                            text = "Сегодня",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = if (isDefaultActive)
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            else
-                                MaterialTheme.colorScheme.onPrimaryContainer
+                            contentDescription = "Сегодня",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(18.dp)
                         )
                     }
                 }
 
                 IconButton(
-                    onClick = { onChangeWeekOffset(1) }
+                    onClick = { onChangeWeekOffset(-1) },
+                    modifier = Modifier.size(32.dp)
                 ) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Rounded.ArrowForwardIos,
@@ -276,7 +261,7 @@ fun HomeworkScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(6.dp))
+        Spacer(modifier = Modifier.height(4.dp))
 
         // Expressive Day Selector Tabs (Mon-Sat, strictly one day focused)
         Row(
@@ -284,7 +269,7 @@ fun HomeworkScreen(
                 .fillMaxWidth()
                 .horizontalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             (0..5).forEach { index ->
                 val isSelected = index == selectedDayIndex
@@ -292,50 +277,47 @@ fun HomeworkScreen(
                 val countForDay = homeworkList.count { HomeworkDateUtils.matchesDay(it, index, monday, schedule) }
 
                 Surface(
-                    shape = RoundedCornerShape(20.dp),
+                    shape = RoundedCornerShape(12.dp),
                     color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHighest,
-                    modifier = Modifier.clickable { selectedDayIndex = index }
+                    modifier = Modifier
+                        .height(38.dp)
+                        .clickable { selectedDayIndex = index }
                 ) {
-                    Column(
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         Text(
                             text = HomeworkDateUtils.getDayShortLabel(index),
-                            style = MaterialTheme.typography.labelLarge,
+                            style = MaterialTheme.typography.labelMedium,
                             color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
                             fontWeight = FontWeight.Bold
                         )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            Text(
-                                text = "${dayDate.dayOfMonth}",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Black,
-                                color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
-                            )
-                            if (countForDay > 0) {
-                                Surface(
-                                    shape = RoundedCornerShape(6.dp),
+                        Text(
+                            text = "${dayDate.dayOfMonth}",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
+                        )
+                        if (countForDay > 0) {
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = if (isSelected)
+                                    MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.25f)
+                                else
+                                    MaterialTheme.colorScheme.primaryContainer
+                            ) {
+                                Text(
+                                    text = "$countForDay",
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
                                     color = if (isSelected)
-                                        MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.25f)
+                                        MaterialTheme.colorScheme.onPrimary
                                     else
-                                        MaterialTheme.colorScheme.primaryContainer
-                                ) {
-                                    Text(
-                                        text = "$countForDay",
-                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
-                                        style = MaterialTheme.typography.labelSmall,
-                                        fontWeight = FontWeight.Bold,
-                                        color = if (isSelected)
-                                            MaterialTheme.colorScheme.onPrimary
-                                        else
-                                            MaterialTheme.colorScheme.onPrimaryContainer
-                                    )
-                                }
+                                        MaterialTheme.colorScheme.onPrimaryContainer
+                                )
                             }
                         }
                     }
@@ -343,79 +325,67 @@ fun HomeworkScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(14.dp))
+        Spacer(modifier = Modifier.height(4.dp))
 
-        // Progress Summary Card for selected day
-        Surface(
-            shape = RoundedCornerShape(22.dp),
-            color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.6f),
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "$selectedDayFullName, ${selectedDayDate.dayOfMonth} ${HomeworkDateUtils.getMonthGenitive(selectedDayDate.monthValue)}",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = "$completedCount из $totalCount",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.Black
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                LinearProgressIndicator(
-                    progress = { progress },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(8.dp)
-                        .clip(RoundedCornerShape(4.dp)),
-                    color = MaterialTheme.colorScheme.primary,
-                    trackColor = MaterialTheme.colorScheme.surfaceVariant
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        // Status Filter Chips
+        // Compact Progress Line for selected day
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                .padding(horizontal = 16.dp, vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                text = "$selectedDayFullName, ${selectedDayDate.dayOfMonth} ${HomeworkDateUtils.getMonthGenitive(selectedDayDate.monthValue)} • $completedCount из $totalCount",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+
+            LinearProgressIndicator(
+                progress = { progress },
+                modifier = Modifier
+                    .width(64.dp)
+                    .height(4.dp)
+                    .clip(RoundedCornerShape(2.dp)),
+                color = MaterialTheme.colorScheme.primary,
+                trackColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+        }
+
+        Spacer(modifier = Modifier.height(2.dp))
+
+        // Compact Status Filter Chips (height 28.dp)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 2.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             FilterChip(
                 selected = statusFilter == HomeworkStatusFilter.ALL,
                 onClick = { statusFilter = HomeworkStatusFilter.ALL },
-                label = { Text("Все ($totalCount)") },
-                shape = RoundedCornerShape(14.dp)
+                label = { Text("Все ($totalCount)", fontSize = 12.sp) },
+                modifier = Modifier.height(28.dp),
+                shape = RoundedCornerShape(8.dp)
             )
             FilterChip(
                 selected = statusFilter == HomeworkStatusFilter.PENDING,
                 onClick = { statusFilter = HomeworkStatusFilter.PENDING },
-                label = { Text("Осталось (${totalCount - completedCount})") },
-                shape = RoundedCornerShape(14.dp)
+                label = { Text("Осталось (${totalCount - completedCount})", fontSize = 12.sp) },
+                modifier = Modifier.height(28.dp),
+                shape = RoundedCornerShape(8.dp)
             )
             FilterChip(
                 selected = statusFilter == HomeworkStatusFilter.COMPLETED,
                 onClick = { statusFilter = HomeworkStatusFilter.COMPLETED },
-                label = { Text("Сделано ($completedCount)") },
-                shape = RoundedCornerShape(14.dp)
+                label = { Text("Сделано ($completedCount)", fontSize = 12.sp) },
+                modifier = Modifier.height(28.dp),
+                shape = RoundedCornerShape(8.dp)
             )
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(6.dp))
 
         // Homework list for the strictly selected day
         AnimatedContent(

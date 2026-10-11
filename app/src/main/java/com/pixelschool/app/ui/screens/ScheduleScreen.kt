@@ -23,6 +23,7 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBackIos
 import androidx.compose.material.icons.automirrored.rounded.ArrowForwardIos
 import androidx.compose.material.icons.automirrored.rounded.Assignment
 import androidx.compose.material.icons.automirrored.rounded.MenuBook
+import androidx.compose.material.icons.rounded.AttachFile
 import androidx.compose.material.icons.rounded.Celebration
 import androidx.compose.material.icons.rounded.DateRange
 import androidx.compose.material.icons.rounded.Grade
@@ -49,6 +50,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.pixelschool.app.data.model.DaySchedule
 import com.pixelschool.app.data.model.Lesson
+import com.pixelschool.app.ui.components.AttachmentChip
 import com.pixelschool.app.ui.components.ExpressiveGradeBadge
 import com.pixelschool.app.ui.components.LessonExpressiveCard
 
@@ -69,18 +71,19 @@ fun ScheduleScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(top = 8.dp)
+            .padding(top = 2.dp)
     ) {
         // Week Navigator Bar
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 4.dp),
+                .padding(horizontal = 16.dp, vertical = 2.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(
-                onClick = { onChangeWeekOffset(-1) }
+                onClick = { onChangeWeekOffset(1) },
+                modifier = Modifier.size(32.dp)
             ) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Rounded.ArrowBackIos,
@@ -91,40 +94,51 @@ fun ScheduleScreen(
             }
 
             Surface(
-                shape = RoundedCornerShape(14.dp),
+                shape = RoundedCornerShape(10.dp),
                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                modifier = Modifier.clickable { onResetWeekOffset() }
+                modifier = Modifier
+                    .height(30.dp)
+                    .clickable { onResetWeekOffset() }
             ) {
-                Text(
-                    text = when (weekOffset) {
-                        0 -> "Текущая неделя"
-                        1 -> "Следующая неделя"
-                        -1 -> "Предыдущая неделя"
-                        else -> if (weekOffset > 0) "+$weekOffset нед." else "$weekOffset нед."
-                    },
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier.padding(horizontal = 12.dp)
+                ) {
+                    Text(
+                        text = when (weekOffset) {
+                            0 -> "Текущая неделя"
+                            -1 -> "Следующая неделя"
+                            1 -> "Предыдущая неделя"
+                            else -> if (weekOffset < 0) "+${-weekOffset} нед." else "-$weekOffset нед."
+                        },
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
             }
 
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
                 if (weekOffset != 0) {
                     IconButton(
-                        onClick = { onResetWeekOffset() }
+                        onClick = { onResetWeekOffset() },
+                        modifier = Modifier.size(32.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.Today,
                             contentDescription = "Текущая неделя",
                             tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(20.dp)
+                            modifier = Modifier.size(18.dp)
                         )
                     }
                 }
 
                 IconButton(
-                    onClick = { onChangeWeekOffset(1) }
+                    onClick = { onChangeWeekOffset(-1) },
+                    modifier = Modifier.size(32.dp)
                 ) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Rounded.ArrowForwardIos,
@@ -136,7 +150,7 @@ fun ScheduleScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(6.dp))
+        Spacer(modifier = Modifier.height(4.dp))
 
         // Expressive Day Selector Tabs
         Row(
@@ -144,7 +158,7 @@ fun ScheduleScreen(
                 .fillMaxWidth()
                 .horizontalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             schedule.forEachIndexed { index, day ->
                 val isSelected = index == selectedDayIndex
@@ -160,21 +174,23 @@ fun ScheduleScreen(
                 }
 
                 Surface(
-                    shape = RoundedCornerShape(20.dp),
+                    shape = RoundedCornerShape(12.dp),
                     color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHighest,
-                    modifier = Modifier.clickable { onSelectDay(index) }
+                    modifier = Modifier
+                        .height(38.dp)
+                        .clickable { onSelectDay(index) }
                 ) {
-                    Column(
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         Text(
                             text = shortDay,
-                            style = MaterialTheme.typography.labelLarge,
+                            style = MaterialTheme.typography.labelMedium,
                             color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
                             fontWeight = FontWeight.Bold
                         )
-                        Spacer(modifier = Modifier.height(2.dp))
                         Text(
                             text = day.date.take(5),
                             style = MaterialTheme.typography.labelSmall,
@@ -185,7 +201,7 @@ fun ScheduleScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(6.dp))
 
         if (selectedDay == null || selectedDay.isHoliday || selectedDay.lessons.isEmpty()) {
             Box(
@@ -242,7 +258,7 @@ fun ScheduleScreen(
                     ) {
                         Text(
                             text = "${selectedDay.dayOfWeek}, ${selectedDay.date}",
-                            style = MaterialTheme.typography.headlineSmall,
+                            style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
                         Surface(
@@ -590,6 +606,48 @@ fun LessonDetailBottomSheet(
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                    }
+                }
+            }
+
+            // Block 4: Attachments (Прикреплённые материалы)
+            if (lesson.attachments.isNotEmpty()) {
+                Surface(
+                    shape = RoundedCornerShape(20.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.AttachFile,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Text(
+                                text = "Материалы и файлы (${lesson.attachments.size})",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            lesson.attachments.forEach { attachment ->
+                                AttachmentChip(attachment = attachment)
+                            }
+                        }
                     }
                 }
             }
