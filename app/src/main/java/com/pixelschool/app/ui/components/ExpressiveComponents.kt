@@ -79,10 +79,13 @@ fun ExpressiveGradeBadge(
 @Composable
 fun LessonExpressiveCard(
     lesson: Lesson,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null
 ) {
     Card(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .then(if (onClick != null) Modifier.clip(RoundedCornerShape(24.dp)).clickable(onClick = onClick) else Modifier),
         shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f)
