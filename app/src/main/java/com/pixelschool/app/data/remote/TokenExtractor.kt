@@ -70,8 +70,31 @@ object TokenExtractor {
                 val value = trimmed.substringAfter("token=").trim()
                 if (value.isNotBlank()) return value
             }
+            if (trimmed.startsWith("jwt_v_2=")) {
+                val value = trimmed.substringAfter("jwt_v_2=").trim()
+                if (value.isNotBlank()) return value
+            }
+            if (trimmed.startsWith("ej_esia_v2=")) {
+                val value = trimmed.substringAfter("ej_esia_v2=").trim()
+                if (value.isNotBlank()) return value
+            }
         }
         return null
+    }
+
+    /**
+     * Finds any JWT token within cookies (ej_esia_v2, jwt_v_2, etc.)
+     */
+    fun extractJwtListFromCookies(cookies: String?): List<String> {
+        if (cookies.isNullOrBlank()) return emptyList()
+        val jwts = mutableListOf<String>()
+        for (part in cookies.split(";")) {
+            val value = part.substringAfter("=").trim()
+            if (value.startsWith("eyJ") && value.contains(".")) {
+                jwts.add(value)
+            }
+        }
+        return jwts
     }
 
     /**

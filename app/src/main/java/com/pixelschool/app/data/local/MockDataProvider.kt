@@ -16,9 +16,12 @@ object MockDataProvider {
     val demoSession = UserSession(
         token = "demo_token_12345678",
         vendor = "edu",
-        login = "student_krym",
-        userTitle = "Алексей Смирнов (10-А класс)",
-        schoolTitle = "МБОУ СОШ №1 г. Симферополь",
+        login = "student_demo",
+        userTitle = "Имя Фамилия",
+        schoolTitle = "Школа №1",
+        firstName = "Имя",
+        lastName = "Фамилия",
+        schoolName = "Школа №1",
         isDemo = true
     )
 
