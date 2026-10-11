@@ -140,7 +140,10 @@ class EljurApiClient(
         try {
             // First try API if we have an API token
             if (token.isNotBlank() && token != "web_session") {
-                val url = "$baseUrl/apiv3/getdiary?devkey=$devKey&auth_token=$token&vendor=$vendor&out_format=json&rings=yes"
+                // When vendor is "edu", omit it from the request URL because regional server edu.rk.gov.ru
+                // rejects vendor=edu with "не удалось авторизовать разработчика" (it expects specific school code or no vendor)
+                val vendorParam = if (vendor.isNotBlank() && vendor != "edu") "&vendor=$vendor" else ""
+                val url = "$baseUrl/apiv3/getdiary?devkey=$devKey&auth_token=$token$vendorParam&out_format=json&rings=yes"
                 val reqBuilder = Request.Builder().url(url)
                 if (!cookies.isNullOrEmpty()) {
                     reqBuilder.addHeader("Cookie", cookies)
@@ -160,7 +163,7 @@ class EljurApiClient(
                 }
             }
 
-            // Web fallback: parse /journal-app/week.0
+            // Web fallback: parse /journal-app/week.0 with user session cookies
             if (!cookies.isNullOrEmpty()) {
                 val webDays = fetchDiaryFromWeb(cookies)
                 if (webDays.isSuccess && webDays.getOrNull()?.isNotEmpty() == true) {
@@ -264,23 +267,23 @@ class EljurApiClient(
             val response = client.newCall(request).execute()
             val html = response.body?.string() ?: return Result.failure(Exception("Пустая HTML страница"))
             val doc = Jsoup.parse(html)
-            val dayElements = doc.select("div.dnevnik-day")
+            val dayElements = doc.select("div.dnevnik-day, div.m-journal__day, div.journal-day, div.day-card")
 
             val list = mutableListOf<DaySchedule>()
             for (dayElem in dayElements) {
-                val titleElem = dayElem.selectFirst("div.dnevnik-day__title") ?: continue
+                val titleElem = dayElem.selectFirst("div.dnevnik-day__title, .day-title, .m-journal__day-header") ?: continue
                 val parts = titleElem.text().split(", ")
                 val dayOfWeek = parts.getOrNull(0) ?: ""
-                val date = parts.getOrNull(1) ?: ""
+                val date = parts.getOrNull(1) ?: parts.getOrNull(0) ?: ""
 
                 val lessons = mutableListOf<Lesson>()
-                val lessonElems = dayElem.select("div.dnevnik-lesson")
+                val lessonElems = dayElem.select("div.dnevnik-lesson, div.m-journal__lesson, div.lesson-item, tr.lesson-row, div.journal-lesson")
                 for (lElem in lessonElems) {
-                    val num = lElem.selectFirst("div.dnevnik-lesson__number")?.text()?.replace(".", "")?.trim()?.toIntOrNull() ?: 1
-                    val time = lElem.selectFirst("div.dnevnik-lesson__time")?.text()?.trim() ?: ""
-                    val subject = lElem.selectFirst("span.js-rt_licey-dnevnik-subject")?.text()?.trim() ?: "Урок"
-                    val task = lElem.selectFirst("div.dnevnik-lesson__task")?.text()?.trim()
-                    val markVal = lElem.selectFirst("div.dnevnik-mark")?.text()?.trim()
+                    val num = lElem.selectFirst(".dnevnik-lesson__number, .lesson-number, .num")?.text()?.replace(".", "")?.trim()?.toIntOrNull() ?: 1
+                    val time = lElem.selectFirst(".dnevnik-lesson__time, .lesson-time, .time")?.text()?.trim() ?: ""
+                    val subject = lElem.selectFirst(".js-rt_licey-dnevnik-subject, .lesson-subject, .subject-title, .dnevnik-lesson__name, span.subject")?.text()?.trim() ?: "Урок"
+                    val task = lElem.selectFirst(".dnevnik-lesson__task, .lesson-task, .homework-text, .task-description")?.text()?.trim()
+                    val markVal = lElem.selectFirst(".dnevnik-mark, .mark-badge, .grade, .lesson-mark")?.text()?.trim()
 
                     val marks = if (!markVal.isNullOrEmpty()) listOf(Mark(value = markVal)) else emptyList()
 
@@ -297,6 +300,9 @@ class EljurApiClient(
                             startTime = startTime,
                             endTime = endTime,
                             subject = subject,
+                            room = "",
+                            teacher = "",
+                            topic = null,
                             homework = task,
                             marks = marks
                         )
