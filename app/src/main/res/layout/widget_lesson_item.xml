@@ -16,7 +16,7 @@
         android:layout_height="wrap_content"
         android:background="@drawable/widget_pill_bg"
         android:text="1 • 08:30"
-        android:textColor="#D0BCFF"
+        android:textColor="@color/widget_primary_accent"
         android:textSize="10sp"
         android:textStyle="bold"
         android:paddingLeft="6dp"
@@ -34,7 +34,7 @@
         android:ellipsize="end"
         android:maxLines="1"
         android:text="Алгебра"
-        android:textColor="#F2EFF4"
+        android:textColor="@color/widget_text_primary"
         android:textSize="12sp"
         android:textStyle="bold" />
 
@@ -44,7 +44,7 @@
         android:layout_height="wrap_content"
         android:background="@drawable/widget_room_badge_bg"
         android:text="каб. 24"
-        android:textColor="#CAC4D0"
+        android:textColor="@color/widget_text_secondary"
         android:textSize="10sp"
         android:paddingLeft="5dp"
         android:paddingTop="1dp"
