@@ -32,7 +32,7 @@ class EljurApiClient(
     private val fallbackDevKey = "19c4bfc2705023fe080ce94ace26aec9"
     private val devKeys = listOf(devKey, fallbackDevKey)
 
-    private val browserUserAgent = "Mozilla/5.0 (Linux; Android 14; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36"
+    private val browserUserAgent = "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.6723.102 Mobile Safari/537.36"
 
     fun buildRequest(url: String, cookies: String? = null, isJson: Boolean = true): Request {
         val builder = Request.Builder()
@@ -42,6 +42,7 @@ class EljurApiClient(
             .header("sec-ch-ua-mobile", "?1")
             .header("sec-ch-ua-platform", "\"Android\"")
             .header("Accept-Language", "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7")
+            .header("Referer", "https://edu.rk.gov.ru/journal-app")
             .header("Accept", if (isJson) "application/json, text/plain, */*" else "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
 
         if (!cookies.isNullOrBlank()) {
@@ -51,10 +52,15 @@ class EljurApiClient(
     }
 
     fun getBaseUrls(vendor: String = "edu"): List<String> {
-        val list = mutableListOf("https://edu.rk.gov.ru", "https://api.eljur.ru")
-        if (vendor.isNotBlank() && vendor != "edu") {
+        val list = mutableListOf<String>()
+        // 1. Regional Crimean portal
+        list.add("https://edu.rk.gov.ru")
+        // 2. Direct school or regional subdomain
+        if (vendor.isNotBlank()) {
             list.add("https://$vendor.eljur.ru")
         }
+        // 3. Central multi-tenant ElJur API gateway
+        list.add("https://api.eljur.ru")
         return list.distinct()
     }
 
@@ -635,10 +641,14 @@ class EljurApiClient(
                     for (cand in studentCandidates) {
                         val candParam = if (cand != null) "&student=$cand" else ""
                         val candidateUrls = listOf(
+                            "$base/apiv3/getdiary?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam&days=$targetDays&rings=1",
                             "$base/apiv3/getdiary?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam&days=$targetDays&rings=true",
                             "$base/apiv3/getdiary?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam&days=$targetDays",
+                            "$base/apiv3/getdials?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam&days=$targetDays&rings=1",
+                            "$base/apiv3/getdials?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam&days=$targetDays",
+                            "$base/apiv3/getschedule?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam&days=$targetDays&rings=1",
                             "$base/apiv3/getschedule?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam&days=$targetDays&rings=true",
-                            "$base/apiv3/getschedule?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam&rings=true"
+                            "$base/apiv3/getschedule?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam&rings=1"
                         )
 
                         for (url in candidateUrls) {
@@ -1048,23 +1058,28 @@ class EljurApiClient(
                 for (dk in devKeys) {
                     for (cand in studentCandidates) {
                         val candParam = if (cand != null) "&student=$cand" else ""
-                        val url = "$base/apiv3/getfinalassessments?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam"
-                        try {
-                            val req = buildRequest(url, cookies)
-                            val resp = client.newCall(req).execute()
-                            val body = resp.body?.string()
-                            if (resp.isSuccessful && !body.isNullOrEmpty()) {
-                                val json = JSONObject(body)
-                                val respObj = json.optJSONObject("response") ?: json
-                                if (respObj.optInt("state", 200) == 200) {
-                                    val finalMarks = parseFinalAssessmentsJson(respObj, cand ?: studentId)
-                                    if (finalMarks.isNotEmpty()) {
-                                        return@withContext Result.success(finalMarks)
+                        val candidateUrls = listOf(
+                            "$base/apiv3/getfinalassessments?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam",
+                            "$base/apiv3/getfinalmarks?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam"
+                        )
+                        for (url in candidateUrls) {
+                            try {
+                                val req = buildRequest(url, cookies)
+                                val resp = client.newCall(req).execute()
+                                val body = resp.body?.string()
+                                if (resp.isSuccessful && !body.isNullOrEmpty()) {
+                                    val json = JSONObject(body)
+                                    val respObj = json.optJSONObject("response") ?: json
+                                    if (respObj.optInt("state", 200) == 200) {
+                                        val finalMarks = parseFinalAssessmentsJson(respObj, cand ?: studentId)
+                                        if (finalMarks.isNotEmpty()) {
+                                            return@withContext Result.success(finalMarks)
+                                        }
                                     }
                                 }
+                            } catch (e: Exception) {
+                                Log.w("EljurApiClient", "fetchFinalAssessments error: ${e.message} for $url")
                             }
-                        } catch (e: Exception) {
-                            Log.w("EljurApiClient", "fetchFinalAssessments error: ${e.message} for $url")
                         }
                     }
                 }
