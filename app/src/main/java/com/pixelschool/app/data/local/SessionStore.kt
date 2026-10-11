@@ -23,6 +23,17 @@ class SessionStore(context: Context) {
         private const val KEY_SCHOOL_NAME = "key_school_name"
     }
 
+    private fun isGoodSchool(s: String?): Boolean {
+        if (s.isNullOrBlank()) return false
+        if (s == "Республика Крым" || s == "ГИС РК «Образование»") return false
+        return s.contains("школ", ignoreCase = true) ||
+               s.contains("гимназ", ignoreCase = true) ||
+               s.contains("лицей", ignoreCase = true) ||
+               s.contains("СОШ", ignoreCase = true) ||
+               s.contains("МБОУ", ignoreCase = true) ||
+               s.contains("МАОУ", ignoreCase = true)
+    }
+
     fun saveSession(session: UserSession, cookies: String? = null) {
         val existingFirst = prefs.getString(KEY_FIRST_NAME, "") ?: ""
         val existingLast = prefs.getString(KEY_LAST_NAME, "") ?: ""
@@ -45,17 +56,6 @@ class SessionStore(context: Context) {
             parts.getOrNull(1) ?: ""
         } else {
             existingFirst
-        }
-
-        fun isGoodSchool(s: String?): Boolean {
-            if (s.isNullOrBlank()) return false
-            if (s == "Республика Крым" || s == "ГИС РК «Образование»") return false
-            return s.contains("школ", ignoreCase = true) ||
-                   s.contains("гимназ", ignoreCase = true) ||
-                   s.contains("лицей", ignoreCase = true) ||
-                   s.contains("СОШ", ignoreCase = true) ||
-                   s.contains("МБОУ", ignoreCase = true) ||
-                   s.contains("МАОУ", ignoreCase = true)
         }
 
         val derivedSchool = when {
@@ -124,17 +124,6 @@ class SessionStore(context: Context) {
             rawUser
         } else {
             "Ученик"
-        }
-
-        fun isGoodSchool(s: String?): Boolean {
-            if (s.isNullOrBlank()) return false
-            if (s == "Республика Крым" || s == "ГИС РК «Образование»") return false
-            return s.contains("школ", ignoreCase = true) ||
-                   s.contains("гимназ", ignoreCase = true) ||
-                   s.contains("лицей", ignoreCase = true) ||
-                   s.contains("СОШ", ignoreCase = true) ||
-                   s.contains("МБОУ", ignoreCase = true) ||
-                   s.contains("МАОУ", ignoreCase = true)
         }
 
         val effectiveSchool = when {
