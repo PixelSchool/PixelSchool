@@ -73,11 +73,11 @@ class MainViewModel(
         loadData()
     }
 
-    fun loginWithVToken(vToken: String, cookies: String? = null) {
+    fun loginWithWebSession(tokenOrVToken: String?, cookies: String?, userName: String? = null) {
         viewModelScope.launch {
             _isLoading.value = true
             _errorMessage.value = null
-            val res = repository.loginWithVToken(vToken, cookies)
+            val res = repository.loginWithWebSession(tokenOrVToken, cookies, userName)
             if (res.isSuccess) {
                 loadData()
             } else {

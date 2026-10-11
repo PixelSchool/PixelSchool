@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group
+        android:translateX="0"
+        android:translateY="0">
+        <!-- Graduation Cap Top Diamond (Centered within 72dp safe zone: x from 24 to 84, y from 34 to 56) -->
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M54,34 L84,45 L54,56 L24,45 Z" />
+
+        <!-- Cap Lower Skullcap -->
+        <path
+            android:fillColor="#EADDFF"
+            android:pathData="M34,49.5 L34,62 C34,69 74,69 74,62 L74,49.5 L54,57 Z" />
+
+        <!-- Tassel and Ribbon -->
+        <path
+            android:fillColor="#FFD8E4"
+            android:pathData="M78,45 L80,45 L81,64 L77,64 Z" />
+        <path
+            android:fillColor="#EFB8C8"
+            android:pathData="M75.5,64 L82.5,64 L82.5,71 L75.5,71 Z" />
+
+        <!-- Expressive Digital Pixels beneath the cap (PixelSchool identity) -->
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M48,68h12v4h-12z" />
+        <path
+            android:fillColor="#D0BCFF"
+            android:pathData="M42,74h24v4h-24z" />
+        <path
+            android:fillColor="#EADDFF"
+            android:pathData="M38,80h14v3h-14z M56,80h14v3h-14z" />
+    </group>
+</vector>
