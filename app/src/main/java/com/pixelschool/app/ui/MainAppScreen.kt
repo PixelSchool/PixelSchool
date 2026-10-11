@@ -350,7 +350,7 @@ fun ProfileScreen(
                             text = if (updateInfo?.isUpdateAvailable == true)
                                 "Доступно обновление v${updateInfo.latestVersion}"
                             else
-                                "Версия приложения: 1.0.0",
+                                "Версия приложения: ${com.pixelschool.app.BuildConfig.VERSION_NAME}",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )

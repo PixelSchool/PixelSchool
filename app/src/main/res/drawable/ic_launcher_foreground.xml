@@ -10,12 +10,12 @@
     <group
         android:scaleX="2.7"
         android:scaleY="2.7"
-        android:translateX="22.13"
-        android:translateY="23.5">
+        android:translateX="21.60"
+        android:translateY="23.93">
         <!-- Shadow Tassel -->
         <path
             android:fillColor="#38001648"
-            android:pathData="M20.0,8.5 H21.0 V16.2 C21.0,16.6 20.8,17.0 20.5,17.0 C20.2,17.0 20.0,16.6 20.0,16.2 Z" />
+            android:pathData="M20.98,9.5 L22.08,9.0 V16.2 C22.08,16.55 21.85,16.8 21.53,16.8 C21.21,16.8 20.98,16.55 20.98,16.2 Z" />
         <!-- Shadow Skullcap -->
         <path
             android:fillColor="#38001648"
@@ -23,25 +23,25 @@
         <!-- Shadow Mortarboard -->
         <path
             android:fillColor="#38001648"
-            android:pathData="M11.04,3.52L2.61,8.12c-0.69,0.38 -0.69,1.38 0,1.76l8.43,4.6c0.6,0.33 1.32,0.33 1.92,0l8.44,-4.6c0.69,-0.38 0.69,-1.38 0,-1.76l-8.44,-4.6c-0.6,-0.32 -1.32,-0.32 -1.92,0z" />
+            android:pathData="M11.04,3.52 C11.64,3.20 12.36,3.20 12.96,3.52 L21.39,8.12 C21.85,8.37 22.08,8.68 22.08,9.0 L12.96,14.48 C12.36,14.80 11.64,14.80 11.04,14.48 L2.61,9.88 C1.92,9.50 1.92,8.50 2.61,8.12 Z" />
     </group>
 
-    <!-- 2. Main 3D Emblem Group (Centered at 54, 54; Prominently sized at ~50dp) -->
+    <!-- 2. Main 3D Emblem Group (Centered at 54.0, 54.0; Prominently sized at ~50dp) -->
     <group
         android:scaleX="2.7"
         android:scaleY="2.7"
-        android:translateX="22.13"
-        android:translateY="21.6">
+        android:translateX="21.60"
+        android:translateY="22.03">
 
-        <!-- 2a. Hanging Golden Ribbon Tassel (Straight, flush with right edge, rendered BEHIND mortarboard) -->
+        <!-- 2a. Hanging Golden Ribbon Tassel (Straight, flush with right edge X=22.08, rendered BEHIND mortarboard) -->
         <path
-            android:pathData="M20.0,8.5 H21.0 V16.2 C21.0,16.6 20.8,17.0 20.5,17.0 C20.2,17.0 20.0,16.6 20.0,16.2 Z">
+            android:pathData="M20.98,9.5 L22.08,9.0 V16.2 C22.08,16.55 21.85,16.8 21.53,16.8 C21.21,16.8 20.98,16.55 20.98,16.2 Z">
             <aapt:attr name="android:fillColor">
                 <gradient
-                    android:startX="20.5"
-                    android:startY="8.5"
-                    android:endX="20.5"
-                    android:endY="17.0"
+                    android:startX="21.53"
+                    android:startY="9.0"
+                    android:endX="21.53"
+                    android:endY="16.8"
                     android:startColor="#FFD166"
                     android:endColor="#FF9F1C"
                     android:type="linear" />
@@ -63,9 +63,9 @@
             </aapt:attr>
         </path>
 
-        <!-- 2c. Diamond Mortarboard Upper Surface (Pearl white, overlaps in front of the tassel) -->
+        <!-- 2c. Diamond Mortarboard Upper Surface (Pearl white, overlaps cleanly over top of tassel) -->
         <path
-            android:pathData="M11.04,3.52L2.61,8.12c-0.69,0.38 -0.69,1.38 0,1.76l8.43,4.6c0.6,0.33 1.32,0.33 1.92,0l8.44,-4.6c0.69,-0.38 0.69,-1.38 0,-1.76l-8.44,-4.6c-0.6,-0.32 -1.32,-0.32 -1.92,0z">
+            android:pathData="M11.04,3.52 C11.64,3.20 12.36,3.20 12.96,3.52 L21.39,8.12 C21.85,8.37 22.08,8.68 22.08,9.0 L12.96,14.48 C12.36,14.80 11.64,14.80 11.04,14.48 L2.61,9.88 C1.92,9.50 1.92,8.50 2.61,8.12 Z">
             <aapt:attr name="android:fillColor">
                 <gradient
                     android:startX="12"
@@ -80,7 +80,7 @@
 
         <!-- 2d. Specular Edge Highlight on the Top Left Rim -->
         <path
-            android:pathData="M11.04,3.52L2.61,8.12c-0.69,0.38 -0.69,1.38 0,1.76L3.6,10.4L11.04,5.2L18.4,9.2L19.4,8.7L11.04,3.52z"
+            android:pathData="M11.04,3.52 C11.64,3.20 12.36,3.20 12.96,3.52 L20.5,8.4 L19.8,8.8 L12.0,4.4 L3.6,8.8 L2.61,8.12 Z"
             android:fillColor="#33FFFFFF" />
 
     </group>
