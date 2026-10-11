@@ -53,18 +53,15 @@ val OutlineDark = Color(0xFF938F99)
 val OutlineVariantDark = Color(0xFF49454F)
 
 // Expressive Grade Accents (High Contrast, Bold Vibrancy)
-val Grade5Color = Color(0xFF00875A) // Emerald Green
 val Grade5Container = Color(0xFFD3F9D8)
 val OnGrade5Container = Color(0xFF003822)
 
-val Grade4Color = Color(0xFF0065FF) // Electric Royal Blue
 val Grade4Container = Color(0xFFDEEBFF)
 val OnGrade4Container = Color(0xFF002266)
 
-val Grade3Color = Color(0xFFFF8B00) // Vibrant Amber
 val Grade3Container = Color(0xFFFFE380)
 val OnGrade3Container = Color(0xFF593000)
 
-val Grade2Color = Color(0xFFDE350B) // Crimson Coral
 val Grade2Container = Color(0xFFFFEBE6)
 val OnGrade2Container = Color(0xFF521200)
+

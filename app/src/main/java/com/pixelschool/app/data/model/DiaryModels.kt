@@ -1,8 +1,5 @@
 package com.pixelschool.app.data.model
 
-import kotlinx.serialization.Serializable
-
-@Serializable
 data class UserSession(
     val token: String,
     val vendor: String = "edu",
@@ -13,7 +10,6 @@ data class UserSession(
     val studentId: String = ""
 )
 
-@Serializable
 data class DaySchedule(
     val date: String,            // "12.10.2026"
     val dayOfWeek: String,       // "Понедельник"
@@ -22,7 +18,6 @@ data class DaySchedule(
     val holidayName: String? = null
 )
 
-@Serializable
 data class Lesson(
     val num: Int,
     val startTime: String,       // "08:30"
@@ -35,7 +30,6 @@ data class Lesson(
     val marks: List<Mark> = emptyList()
 )
 
-@Serializable
 data class Mark(
     val value: String,           // "5", "4+", "Н"
     val weight: Int = 1,
@@ -47,7 +41,6 @@ data class Mark(
         get() = value.take(1).toFloatOrNull()
 }
 
-@Serializable
 data class Homework(
     val id: String,
     val subject: String,
@@ -56,7 +49,6 @@ data class Homework(
     val isCompleted: Boolean = false
 )
 
-@Serializable
 data class SubjectSummary(
     val subject: String,
     val average: Float,          // 4.67
@@ -64,7 +56,6 @@ data class SubjectSummary(
     val finalMark: String? = null
 )
 
-@Serializable
 data class AcademicPeriod(
     val id: String,              // "1"
     val title: String,           // "1 четверть"
@@ -73,3 +64,4 @@ data class AcademicPeriod(
     val rangeDays: String,       // "20260901-20261026"
     val isActive: Boolean = false
 )
+
