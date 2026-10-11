@@ -74,6 +74,21 @@ object TokenExtractor {
         return null
     }
 
+    /**
+     * Extracts PHPSESSID value from cookie header if present.
+     */
+    fun extractPhpsessid(cookies: String?): String? {
+        if (cookies.isNullOrBlank()) return null
+        for (part in cookies.split(";")) {
+            val trimmed = part.trim()
+            if (trimmed.startsWith("PHPSESSID=")) {
+                val value = trimmed.substringAfter("PHPSESSID=").trim()
+                if (value.isNotBlank()) return value
+            }
+        }
+        return null
+    }
+
     private fun extractParamFromFragment(uri: Uri, paramName: String): String? {
         val fragment = uri.fragment ?: return null
         return Uri.parse("?$fragment").getQueryParameter(paramName)

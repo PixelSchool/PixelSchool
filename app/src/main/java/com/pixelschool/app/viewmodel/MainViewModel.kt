@@ -8,6 +8,7 @@ import com.pixelschool.app.data.model.Homework
 import com.pixelschool.app.data.model.SubjectSummary
 import com.pixelschool.app.data.model.UserSession
 import com.pixelschool.app.data.remote.AuthCredentials
+import com.pixelschool.app.data.remote.SessionExpiredException
 import com.pixelschool.app.data.repository.DiaryRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -73,6 +74,12 @@ class MainViewModel(
                 _schedule.value = repository.getSchedule(_currentWeekOffset.value)
                 _homework.value = repository.getHomework(_currentWeekOffset.value)
             } catch (e: Exception) {
+                if (e is SessionExpiredException) {
+                    repository.logout()
+                    _errorMessage.value = e.message ?: "Сессия устарела. Требуется повторный вход."
+                    _isLoading.value = false
+                    return@launch
+                }
                 if (!curSession.isDemo) {
                     _schedule.value = emptyList()
                     _homework.value = emptyList()
@@ -89,6 +96,12 @@ class MainViewModel(
                 val activeRange = resolvedPeriods.getOrNull(activeIdx)?.rangeDays
                 _marks.value = repository.getMarks(activeRange)
             } catch (e: Exception) {
+                if (e is SessionExpiredException) {
+                    repository.logout()
+                    _errorMessage.value = e.message ?: "Сессия устарела. Требуется повторный вход."
+                    _isLoading.value = false
+                    return@launch
+                }
                 if (!curSession.isDemo) {
                     _marks.value = emptyList()
                 }
@@ -120,6 +133,11 @@ class MainViewModel(
                 _schedule.value = repository.getSchedule(newOffset)
                 _homework.value = repository.getHomework(newOffset)
             } catch (e: Exception) {
+                if (e is SessionExpiredException) {
+                    repository.logout()
+                    _errorMessage.value = e.message ?: "Сессия устарела. Требуется повторный вход."
+                    return@launch
+                }
                 if (!curSession.isDemo) {
                     _schedule.value = emptyList()
                     _homework.value = emptyList()
@@ -142,6 +160,11 @@ class MainViewModel(
                     val p = _periods.value[index]
                     _marks.value = repository.getMarks(p.rangeDays)
                 } catch (e: Exception) {
+                    if (e is SessionExpiredException) {
+                        repository.logout()
+                        _errorMessage.value = e.message ?: "Сессия устарела. Требуется повторный вход."
+                        return@launch
+                    }
                     if (!curSession.isDemo) {
                         _marks.value = emptyList()
                     }

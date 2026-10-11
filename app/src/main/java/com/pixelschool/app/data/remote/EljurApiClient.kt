@@ -21,6 +21,8 @@ import java.util.Date
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 
+class SessionExpiredException(message: String = "Сессия устарела. Требуется повторный вход.") : Exception(message)
+
 class EljurApiClient(
     private val client: OkHttpClient = RussianTrustManager.createOkHttpClient()
 ) {
@@ -32,21 +34,46 @@ class EljurApiClient(
     private val fallbackDevKey = "19c4bfc2705023fe080ce94ace26aec9"
     private val devKeys = listOf(devKey, fallbackDevKey)
 
-    private val browserUserAgent = "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.6723.102 Mobile Safari/537.36"
+    private val browserUserAgent = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36"
 
     companion object {
         private const val TAG = "PixelSchoolNetwork"
+    }
+
+    fun checkSessionValidity(response: okhttp3.Response, body: String?) {
+        val finalUrl = response.request.url.toString()
+        if (finalUrl.contains("/authorize") ||
+            finalUrl.contains("/journal-esia-action") ||
+            finalUrl.contains("esia.gosuslugi.ru") ||
+            finalUrl.contains("/login")
+        ) {
+            throw SessionExpiredException()
+        }
+
+        if (!body.isNullOrBlank()) {
+            val isLoginPage = body.contains("<form action=\"/authorize\"") ||
+                    body.contains("form action=\"https://edu.rk.gov.ru/authorize\"") ||
+                    (body.contains("name=\"login\"") && body.contains("name=\"password\"")) ||
+                    body.contains("class=\"login-form\"") ||
+                    body.contains("id=\"login_form\"") ||
+                    body.contains("Для доступа к этой странице необходимо авторизоваться") ||
+                    (body.contains("<title>Авторизация") || body.contains("<title>Вход в систему"))
+
+            if (isLoginPage) {
+                throw SessionExpiredException()
+            }
+        }
     }
 
     fun buildRequest(url: String, cookies: String? = null, isJson: Boolean = true): Request {
         val builder = Request.Builder()
             .url(url)
             .header("User-Agent", browserUserAgent)
-            .header("sec-ch-ua", "\"Chromium\";v=\"130\", \"Google Chrome\";v=\"130\", \"Not?A_Brand\";v=\"99\"")
+            .header("sec-ch-ua", "\"Chromium\";v=\"128\", \"Google Chrome\";v=\"128\", \"Not?A_Brand\";v=\"99\"")
             .header("sec-ch-ua-mobile", "?1")
             .header("sec-ch-ua-platform", "\"Android\"")
-            .header("Accept-Language", "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7")
-            .header("Referer", "https://edu.rk.gov.ru/journal-app")
+            .header("Accept-Language", "ru-RU,ru;q=0.9")
+            .header("Referer", "https://edu.rk.gov.ru/?show=home")
             .header("Accept", if (isJson) "application/json, text/plain, */*" else "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
 
         if (!cookies.isNullOrBlank()) {
@@ -443,6 +470,19 @@ class EljurApiClient(
         return "$start-$end"
     }
 
+    fun getMondayDateForOffset(weekOffset: Int = 0, baseDate: Date = Date()): String {
+        val cal = Calendar.getInstance(Locale.getDefault())
+        cal.time = baseDate
+        if (weekOffset != 0) {
+            cal.add(Calendar.WEEK_OF_YEAR, weekOffset)
+        }
+        val dayOfWeek = cal.get(Calendar.DAY_OF_WEEK)
+        val daysFromMonday = if (dayOfWeek == Calendar.SUNDAY) 6 else dayOfWeek - Calendar.MONDAY
+        cal.add(Calendar.DAY_OF_MONTH, -daysFromMonday)
+        val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+        return sdf.format(cal.time)
+    }
+
     private fun formatDisplayDate(raw: String): String {
         return if (raw.length == 8 && raw.all { it.isDigit() }) {
             "${raw.substring(6, 8)}.${raw.substring(4, 6)}.${raw.substring(0, 4)}"
@@ -669,7 +709,8 @@ class EljurApiClient(
         vendor: String,
         studentId: String? = null,
         days: String? = null,
-        cookies: String? = null
+        cookies: String? = null,
+        weekOffset: Int = 0
     ): Result<List<DaySchedule>> = withContext(Dispatchers.IO) {
         try {
             val targetDays = if (!days.isNullOrBlank()) days else getCurrentWeekRange()
@@ -681,87 +722,91 @@ class EljurApiClient(
                 cookieToken
             } else ""
 
-            val tokenParam = if (effectiveToken.isNotBlank()) "&auth_token=$effectiveToken" else ""
-
-            val studentCandidates = mutableListOf<String?>()
-            if (!studentId.isNullOrBlank()) {
-                studentCandidates.add(studentId)
-                if (studentId.startsWith("u.")) {
-                    studentCandidates.add(studentId.removePrefix("u."))
-                } else {
-                    studentCandidates.add("u.$studentId")
+            // 1. Primary SSR web parsing for edu.rk.gov.ru when cookies are available
+            if (!cookies.isNullOrEmpty()) {
+                val webDays = fetchDiaryFromWeb(cookies, studentId, weekOffset)
+                if (webDays.isSuccess && webDays.getOrNull()?.isNotEmpty() == true) {
+                    return@withContext webDays
+                }
+                if (webDays.exceptionOrNull() is SessionExpiredException) {
+                    return@withContext webDays
                 }
             }
-            studentCandidates.add(null)
 
-            var lastApiError: String? = null
-            val baseUrls = getBaseUrls(vendor)
+            // 2. Official API v3 calls if authentic token is available
+            if (effectiveToken.isNotBlank()) {
+                val tokenParam = "&auth_token=$effectiveToken"
+                val studentCandidates = mutableListOf<String?>()
+                if (!studentId.isNullOrBlank()) {
+                    studentCandidates.add(studentId)
+                    if (studentId.startsWith("u.")) {
+                        studentCandidates.add(studentId.removePrefix("u."))
+                    } else {
+                        studentCandidates.add("u.$studentId")
+                    }
+                }
+                studentCandidates.add(null)
 
-            for (base in baseUrls) {
-                for (dk in devKeys) {
-                    for (cand in studentCandidates) {
-                        val candParam = if (cand != null) "&student=$cand" else ""
-                        val candidateUrls = listOf(
-                            "$base/apiv3/getdiary?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam&days=$targetDays&rings=1",
-                            "$base/apiv3/getdiary?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam&days=$targetDays",
-                            "$base/apiv3/getschedule?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam&days=$targetDays&rings=1",
-                            "$base/api/getdiary?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam&days=$targetDays&rings=1",
-                            "$base/api/getschedule?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam&days=$targetDays&rings=1"
-                        )
+                var lastApiError: String? = null
+                val baseUrls = getBaseUrls(vendor)
 
-                        for (url in candidateUrls) {
-                            try {
-                                val req = buildRequest(url, cookies)
-                                val response = client.newCall(req).execute()
-                                val body = response.body?.string()
+                for (base in baseUrls) {
+                    for (dk in devKeys) {
+                        for (cand in studentCandidates) {
+                            val candParam = if (cand != null) "&student=$cand" else ""
+                            val candidateUrls = listOf(
+                                "$base/apiv3/getdiary?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam&days=$targetDays&rings=1",
+                                "$base/apiv3/getdiary?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam&days=$targetDays",
+                                "$base/apiv3/getschedule?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam&days=$targetDays&rings=1",
+                                "$base/api/getdiary?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam&days=$targetDays&rings=1",
+                                "$base/api/getschedule?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam&days=$targetDays&rings=1"
+                            )
 
-                                if (response.isSuccessful) {
-                                    val json = parseJsonResponse(response, body, req)
-                                    if (json != null) {
-                                        val respObj = json.optJSONObject("response") ?: json
-                                        if (respObj.optInt("state", 200) == 200) {
-                                            val parsedDays = parseApiDiaryDays(respObj, cand ?: studentId)
-                                            if (parsedDays.isNotEmpty()) {
-                                                Log.d(TAG, "Successfully loaded ${parsedDays.size} days from $url")
-                                                return@withContext Result.success(parsedDays)
+                            for (url in candidateUrls) {
+                                try {
+                                    val req = buildRequest(url, cookies)
+                                    val response = client.newCall(req).execute()
+                                    val body = response.body?.string()
+
+                                    checkSessionValidity(response, body)
+
+                                    if (response.isSuccessful) {
+                                        val json = parseJsonResponse(response, body, req)
+                                        if (json != null) {
+                                            val respObj = json.optJSONObject("response") ?: json
+                                            if (respObj.optInt("state", 200) == 200) {
+                                                val parsedDays = parseApiDiaryDays(respObj, cand ?: studentId)
+                                                if (parsedDays.isNotEmpty()) {
+                                                    Log.d(TAG, "Successfully loaded ${parsedDays.size} days from $url")
+                                                    return@withContext Result.success(parsedDays)
+                                                }
+                                            } else {
+                                                val err = respObj.optJSONObject("error")?.optString("message")
+                                                    ?: "state=${respObj.optInt("state")}"
+                                                lastApiError = err
+                                                Log.w(TAG, "Diary API call returned error: $err for $url")
                                             }
                                         } else {
-                                            val err = respObj.optJSONObject("error")?.optString("message")
-                                                ?: "state=${respObj.optInt("state")}"
-                                            lastApiError = err
-                                            Log.w(TAG, "Diary API call returned error: $err for $url")
+                                            logResponseError(req, response, body)
                                         }
                                     } else {
                                         logResponseError(req, response, body)
+                                        if (response.code != 404) {
+                                            lastApiError = "HTTP ${response.code}"
+                                        }
                                     }
-                                } else {
-                                    logResponseError(req, response, body)
-                                    if (response.code != 404) {
-                                        lastApiError = "HTTP ${response.code}"
-                                    }
+                                } catch (e: Exception) {
+                                    if (e is SessionExpiredException) return@withContext Result.failure(e)
+                                    lastApiError = e.message
+                                    Log.w(TAG, "Exception querying diary API: ${e.message}")
                                 }
-                            } catch (e: Exception) {
-                                lastApiError = e.message
-                                Log.w(TAG, "Exception querying diary API: ${e.message}")
                             }
                         }
                     }
                 }
             }
 
-            if (lastApiError != null) {
-                Log.e("EljurApiClient", "All candidate diary API URLs failed. Last error: $lastApiError")
-            }
-
-            // Web fallback: parse web pages with user session cookies
-            if (!cookies.isNullOrEmpty()) {
-                val webDays = fetchDiaryFromWeb(cookies, studentId)
-                if (webDays.isSuccess && webDays.getOrNull()?.isNotEmpty() == true) {
-                    return@withContext webDays
-                }
-            }
-
-            Result.failure(Exception("Не удалось загрузить дневник из региональной системы${if (lastApiError != null) ": $lastApiError" else ""}"))
+            Result.failure(Exception("Не удалось загрузить дневник из региональной системы"))
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -782,128 +827,135 @@ class EljurApiClient(
             } else if (!cookieToken.isNullOrBlank()) {
                 cookieToken
             } else ""
-            val tokenParam = if (effectiveToken.isNotBlank()) "&auth_token=$effectiveToken" else ""
 
-            val targetRanges = mutableListOf<String?>()
-            if (!days.isNullOrBlank()) {
-                targetRanges.add(days)
-            }
-
-            // Also query periods to get active period range
-            val periodsRes = fetchPeriods(effectiveToken, vendor, studentId, cookies).getOrNull()
-            val activePeriod = periodsRes?.firstOrNull { it.isActive } ?: periodsRes?.firstOrNull()
-            if (activePeriod != null && activePeriod.rangeDays !in targetRanges) {
-                targetRanges.add(activePeriod.rangeDays)
-            }
-
-            // Academic year quarter/term fallback ranges
-            val cal = Calendar.getInstance()
-            val currentYear = cal.get(Calendar.YEAR)
-            val month = cal.get(Calendar.MONTH)
-            val schoolYearStart = if (month >= Calendar.SEPTEMBER) currentYear else currentYear - 1
-            val nextYear = schoolYearStart + 1
-            val sdf = SimpleDateFormat("yyyyMMdd", Locale.US)
-            val todayStr = sdf.format(cal.time)
-
-            val fullTermRange = "${schoolYearStart}0901-${nextYear}0531"
-            if (fullTermRange !in targetRanges) targetRanges.add(fullTermRange)
-
-            val yearToDateRange = "${schoolYearStart}0901-$todayStr"
-            if (yearToDateRange !in targetRanges) targetRanges.add(yearToDateRange)
-
-            val currentWeek = getCurrentWeekRange()
-            if (currentWeek !in targetRanges) targetRanges.add(currentWeek)
-
-            targetRanges.add(null) // without days param
-
-            val studentCandidates = mutableListOf<String?>()
-            if (!studentId.isNullOrBlank()) {
-                studentCandidates.add(studentId)
-                if (studentId.startsWith("u.")) {
-                    studentCandidates.add(studentId.removePrefix("u."))
-                } else {
-                    studentCandidates.add("u.$studentId")
-                }
-            }
-            studentCandidates.add(null)
-
-            // Also fetch final/quarter marks in parallel or sequentially
-            val finalMarksMap = fetchFinalAssessments(effectiveToken, vendor, studentId, cookies).getOrDefault(emptyMap())
-
-            val baseUrls = getBaseUrls(vendor)
-            for (base in baseUrls) {
-                for (dk in devKeys) {
-                    for (cand in studentCandidates) {
-                        val candParam = if (cand != null) "&student=$cand" else ""
-                        for (range in targetRanges) {
-                            val daysParam = if (range != null) "&days=$range" else ""
-                            val candidateMarkUrls = listOf(
-                                "$base/apiv3/getmarks?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam$daysParam",
-                                "$base/api/getmarks?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam$daysParam"
-                            )
-                            for (url in candidateMarkUrls) {
-                                try {
-                                    val req = buildRequest(url, cookies)
-                                    val response = client.newCall(req).execute()
-                                    val body = response.body?.string()
-
-                                    if (response.isSuccessful) {
-                                        val json = parseJsonResponse(response, body, req)
-                                        if (json != null) {
-                                            val respObj = json.optJSONObject("response") ?: json
-                                            if (respObj.optInt("state", 200) == 200) {
-                                                val marks = parseApiMarks(respObj, cand ?: studentId)
-                                                if (marks.isNotEmpty()) {
-                                                    // Merge final marks from getfinalassessments if available
-                                                    val enrichedMarks = if (finalMarksMap.isNotEmpty()) {
-                                                        marks.map { subj ->
-                                                            val fm = subj.finalMark ?: finalMarksMap[subj.subject]
-                                                            subj.copy(finalMark = fm)
-                                                        }
-                                                    } else marks
-
-                                                    Log.d(TAG, "Successfully fetched ${enrichedMarks.size} subjects from $url")
-                                                    return@withContext Result.success(enrichedMarks)
-                                                }
-                                            }
-                                        } else {
-                                            logResponseError(req, response, body)
-                                        }
-                                    } else {
-                                        logResponseError(req, response, body)
-                                    }
-                                } catch (e: Exception) {
-                                    Log.w(TAG, "Marks API candidate failed: ${e.message} for $url")
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // If getmarks was empty, but getfinalassessments returned final/quarter marks:
-            if (finalMarksMap.isNotEmpty()) {
-                val summaries = finalMarksMap.map { (subject: String, finalMark: String) ->
-                    val num = finalMark.take(1).toFloatOrNull() ?: 0f
-                    SubjectSummary(
-                        subject = subject,
-                        average = num,
-                        marks = listOf(Mark(value = finalMark)),
-                        finalMark = finalMark
-                    )
-                }.sortedByDescending { it.average }
-                return@withContext Result.success(summaries)
-            }
-
-            // Web fallback
+            // 1. Primary SSR web parsing for edu.rk.gov.ru when cookies are available
             if (!cookies.isNullOrEmpty()) {
                 val webMarks = scrapeMarksFromWeb(cookies, studentId)
                 if (webMarks.isSuccess && webMarks.getOrNull()?.isNotEmpty() == true) {
                     return@withContext webMarks
                 }
+                if (webMarks.exceptionOrNull() is SessionExpiredException) {
+                    return@withContext webMarks
+                }
             }
 
-            Result.failure(Exception("Не удалось загрузить оценки"))
+            // 2. Official API v3 calls if authentic token is available
+            if (effectiveToken.isNotBlank()) {
+                val tokenParam = "&auth_token=$effectiveToken"
+                val targetRanges = mutableListOf<String?>()
+                if (!days.isNullOrBlank()) {
+                    targetRanges.add(days)
+                }
+
+                // Also query periods to get active period range
+                val periodsRes = fetchPeriods(effectiveToken, vendor, studentId, cookies).getOrNull()
+                val activePeriod = periodsRes?.firstOrNull { it.isActive } ?: periodsRes?.firstOrNull()
+                if (activePeriod != null && activePeriod.rangeDays !in targetRanges) {
+                    targetRanges.add(activePeriod.rangeDays)
+                }
+
+                val cal = Calendar.getInstance()
+                val currentYear = cal.get(Calendar.YEAR)
+                val month = cal.get(Calendar.MONTH)
+                val schoolYearStart = if (month >= Calendar.SEPTEMBER) currentYear else currentYear - 1
+                val nextYear = schoolYearStart + 1
+                val sdf = SimpleDateFormat("yyyyMMdd", Locale.US)
+                val todayStr = sdf.format(cal.time)
+
+                val fullTermRange = "${schoolYearStart}0901-${nextYear}0531"
+                if (fullTermRange !in targetRanges) targetRanges.add(fullTermRange)
+
+                val yearToDateRange = "${schoolYearStart}0901-$todayStr"
+                if (yearToDateRange !in targetRanges) targetRanges.add(yearToDateRange)
+
+                val currentWeek = getCurrentWeekRange()
+                if (currentWeek !in targetRanges) targetRanges.add(currentWeek)
+
+                targetRanges.add(null) // without days param
+
+                val studentCandidates = mutableListOf<String?>()
+                if (!studentId.isNullOrBlank()) {
+                    studentCandidates.add(studentId)
+                    if (studentId.startsWith("u.")) {
+                        studentCandidates.add(studentId.removePrefix("u."))
+                    } else {
+                        studentCandidates.add("u.$studentId")
+                    }
+                }
+                studentCandidates.add(null)
+
+                // Also fetch final/quarter marks in parallel or sequentially
+                val finalMarksMap = fetchFinalAssessments(effectiveToken, vendor, studentId, cookies).getOrDefault(emptyMap())
+
+                val baseUrls = getBaseUrls(vendor)
+                for (base in baseUrls) {
+                    for (dk in devKeys) {
+                        for (cand in studentCandidates) {
+                            val candParam = if (cand != null) "&student=$cand" else ""
+                            for (range in targetRanges) {
+                                val daysParam = if (range != null) "&days=$range" else ""
+                                val candidateMarkUrls = listOf(
+                                    "$base/apiv3/getmarks?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam$daysParam",
+                                    "$base/api/getmarks?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam$daysParam"
+                                )
+                                for (url in candidateMarkUrls) {
+                                    try {
+                                        val req = buildRequest(url, cookies)
+                                        val response = client.newCall(req).execute()
+                                        val body = response.body?.string()
+
+                                        checkSessionValidity(response, body)
+
+                                        if (response.isSuccessful) {
+                                            val json = parseJsonResponse(response, body, req)
+                                            if (json != null) {
+                                                val respObj = json.optJSONObject("response") ?: json
+                                                if (respObj.optInt("state", 200) == 200) {
+                                                    val marks = parseApiMarks(respObj, cand ?: studentId)
+                                                    if (marks.isNotEmpty()) {
+                                                        val enrichedMarks = if (finalMarksMap.isNotEmpty()) {
+                                                            marks.map { subj ->
+                                                                val fm = subj.finalMark ?: finalMarksMap[subj.subject]
+                                                                subj.copy(finalMark = fm)
+                                                            }
+                                                        } else marks
+
+                                                        Log.d(TAG, "Successfully fetched ${enrichedMarks.size} subjects from $url")
+                                                        return@withContext Result.success(enrichedMarks)
+                                                    }
+                                                }
+                                            } else {
+                                                logResponseError(req, response, body)
+                                            }
+                                        } else {
+                                            logResponseError(req, response, body)
+                                        }
+                                    } catch (e: Exception) {
+                                        if (e is SessionExpiredException) return@withContext Result.failure(e)
+                                        Log.w(TAG, "Marks API candidate failed: ${e.message} for $url")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // If getmarks was empty, but getfinalassessments returned final/quarter marks:
+                if (finalMarksMap.isNotEmpty()) {
+                    val summaries = finalMarksMap.map { (subject: String, finalMark: String) ->
+                        val num = finalMark.take(1).toFloatOrNull() ?: 0f
+                        SubjectSummary(
+                            subject = subject,
+                            average = num,
+                            marks = listOf(Mark(value = finalMark)),
+                            finalMark = finalMark
+                        )
+                    }.sortedByDescending { it.average }
+                    return@withContext Result.success(summaries)
+                }
+            }
+
+            Result.failure(Exception("Не удалось загрузить оценки из региональной системы"))
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -1275,19 +1327,22 @@ class EljurApiClient(
             val cleanStudent = studentId?.removePrefix("u.")
             val candidateUrls = mutableListOf<String>()
             if (!cleanStudent.isNullOrBlank()) {
+                candidateUrls.add("$baseUrl/journal-student-grades-action/u.$cleanStudent")
                 candidateUrls.add("$baseUrl/journal-app/itog/u.$cleanStudent")
                 candidateUrls.add("$baseUrl/journal-app/marks/u.$cleanStudent")
                 candidateUrls.add("$baseUrl/journal-app/u.$cleanStudent")
             }
+            candidateUrls.add("$baseUrl/journal-student-grades-action")
             candidateUrls.add("$baseUrl/journal-app/itog")
             candidateUrls.add("$baseUrl/journal-app/marks")
-            candidateUrls.add("$baseUrl/journal-student-grades-action")
             candidateUrls.add("$baseUrl/journal-app")
 
             for (targetUrl in candidateUrls) {
                 val req = buildRequest(targetUrl, cookies, isJson = false)
                 val resp = client.newCall(req).execute()
                 val html = resp.body?.string() ?: continue
+
+                checkSessionValidity(resp, html)
 
                 if (!resp.isSuccessful || html.contains("<title>Ошибка") || html.contains("Страница не найдена")) {
                     logResponseError(req, resp, html)
@@ -1301,51 +1356,121 @@ class EljurApiClient(
                 }
 
                 val doc = Jsoup.parse(html)
-                val rows = doc.select("tr.journal-table__row, tr.marks-row, tr.dnevnik-row, table.journal tr, table.dnevnik tr")
-                if (rows.isEmpty()) continue
+                val parsed = parseGradesHtml(doc)
+                if (parsed.isNotEmpty()) {
+                    return Result.success(parsed)
+                }
+            }
 
-                val list = mutableListOf<SubjectSummary>()
-                for (row in rows) {
-                    val subjectElem = row.selectFirst(".subject, .lesson-name, td:first-child, .subject-title") ?: continue
-                    val subjectName = subjectElem.text().trim()
-                    if (subjectName.isBlank() || subjectName.contains("Предмет", true) || subjectName.length < 2) continue
+            Result.failure(Exception("Не удалось извлечь оценки со страницы регионального портала"))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
 
-                    val markElements = row.select(".mark, .grade, .mark-badge, span.cell-mark, .mark_val")
-                    val marks = mutableListOf<Mark>()
-                    for (mElem in markElements) {
-                        val mVal = mElem.text().trim()
-                        if (mVal.isNotBlank() && mVal.length <= 3) {
-                            marks.add(Mark(value = mVal))
-                        }
-                    }
+    private fun parseGradesHtml(doc: org.jsoup.nodes.Document): List<SubjectSummary> {
+        val rows = doc.select("tr.journal-table__row, tr.marks-row, tr.dnevnik-row, table.journal tr, table.dnevnik tr, table.grid tr, table tr")
+        if (rows.isEmpty()) return emptyList()
 
-                    val avgElem = row.selectFirst(".average, .avg, .average-grade, td:last-child")
-                    val avgStr = avgElem?.text()?.replace(',', '.')?.trim()
-                    val avgFloat = avgStr?.toFloatOrNull() ?: if (marks.isNotEmpty()) {
-                        val num = marks.mapNotNull { it.numericValue }
-                        if (num.isNotEmpty()) num.average().toFloat() else 0f
-                    } else 0f
+        val subjectMap = LinkedHashMap<String, SubjectSummary>()
 
-                    if (marks.isNotEmpty() || avgFloat > 0f) {
-                        list.add(
-                            SubjectSummary(
-                                subject = subjectName,
-                                average = avgFloat,
-                                marks = marks
+        for (row in rows) {
+            val subjectElem = row.selectFirst(".subject, .lesson-name, .discipline, .subject-title, td.name, td:first-child") ?: continue
+            val subjectName = subjectElem.text().trim()
+            if (subjectName.isBlank() ||
+                subjectName.contains("Предмет", ignoreCase = true) ||
+                subjectName.contains("Дисциплина", ignoreCase = true) ||
+                subjectName.contains("ФИО", ignoreCase = true) ||
+                subjectName.length < 2 ||
+                row.children().all { it.tagName() == "th" }
+            ) {
+                continue
+            }
+
+            val markElements = row.select(".mark, .grade, .mark-badge, span.cell-mark, .mark_val, .val, .cell-grade, .m-mark, span.mark, .dnevnik-mark")
+            val marks = mutableListOf<Mark>()
+
+            for (mElem in markElements) {
+                val mVal = mElem.ownText().ifBlank { mElem.text() }.trim()
+                if (mVal.isNotBlank() && mVal.length <= 4) {
+                    val subWeight = mElem.selectFirst("sub")?.text()?.toIntOrNull()
+                        ?: mElem.selectFirst("sup")?.text()?.toIntOrNull()
+                        ?: mElem.attr("data-weight").toIntOrNull()
+                        ?: Regex("""вес[:\s]+(\d+)""", RegexOption.IGNORE_CASE).find(mElem.attr("title"))?.groupValues?.get(1)?.toIntOrNull()
+                        ?: 1
+
+                    val tooltip = mElem.attr("title").ifBlank { null }
+                    val dateMatch = tooltip?.let { Regex("""\b(\d{2}\.\d{2}(?:\.\d{4})?)\b""").find(it)?.groupValues?.get(1) }
+                    val isCtrl = subWeight > 1 || (tooltip?.contains("контроль", ignoreCase = true) == true) || (tooltip?.contains("самостоят", ignoreCase = true) == true)
+
+                    marks.add(
+                        Mark(
+                            value = mVal,
+                            weight = subWeight,
+                            date = dateMatch ?: "",
+                            comment = tooltip,
+                            isControl = isCtrl
+                        )
+                    )
+                }
+            }
+
+            if (marks.isEmpty()) {
+                val cells = row.select("td")
+                for (cell in cells.drop(1)) {
+                    val cellText = cell.ownText().trim()
+                    if (cellText.isNotEmpty() && cellText.length <= 4 && (cellText[0].isDigit() || cellText.equals("н", true) || cellText.equals("зач", true))) {
+                        val tooltip = cell.attr("title").ifBlank { null }
+                        val subWeight = Regex("""вес[:\s]+(\d+)""", RegexOption.IGNORE_CASE).find(tooltip ?: "")?.groupValues?.get(1)?.toIntOrNull() ?: 1
+                        marks.add(
+                            Mark(
+                                value = cellText,
+                                weight = subWeight,
+                                comment = tooltip,
+                                isControl = subWeight > 1 || (tooltip?.contains("контроль", true) == true)
                             )
                         )
                     }
                 }
-
-                if (list.isNotEmpty()) {
-                    return Result.success(list.sortedByDescending { it.average })
-                }
             }
 
-            Result.failure(Exception("Пустая HTML страница оценок"))
-        } catch (e: Exception) {
-            Result.failure(e)
+            val avgElem = row.selectFirst(".average, .avg, .average-grade, .middle-mark, .cell-avg")
+            val avgStr = avgElem?.text()?.replace(',', '.')?.trim()
+            val avgFloat = avgStr?.toFloatOrNull() ?: if (marks.isNotEmpty()) {
+                val totalWeight = marks.filter { it.numericValue != null }.sumOf { it.weight }
+                if (totalWeight > 0) {
+                    val weightedSum = marks.sumOf { ((it.numericValue ?: 0f) * it.weight).toDouble() }
+                    (weightedSum / totalWeight).toFloat()
+                } else 0f
+            } else 0f
+
+            val finalMarkElem = row.selectFirst(".itog, .final-mark, .quarter-mark, .period-mark, td.itog")
+            val finalMark = finalMarkElem?.text()?.trim()?.takeIf { it.isNotBlank() && it.length <= 3 }
+
+            if (marks.isNotEmpty() || avgFloat > 0f || finalMark != null) {
+                val existing = subjectMap[subjectName]
+                if (existing != null) {
+                    val mergedMarks = (existing.marks + marks).distinctBy { "${it.value}_${it.date}_${it.comment}" }
+                    val bestFinal = existing.finalMark ?: finalMark
+                    val bestAvg = if (avgFloat > 0f) avgFloat else existing.average
+                    subjectMap[subjectName] = SubjectSummary(
+                        subject = subjectName,
+                        average = bestAvg,
+                        marks = mergedMarks,
+                        finalMark = bestFinal
+                    )
+                } else {
+                    subjectMap[subjectName] = SubjectSummary(
+                        subject = subjectName,
+                        average = avgFloat,
+                        marks = marks,
+                        finalMark = finalMark
+                    )
+                }
+            }
         }
+
+        return subjectMap.values.sortedByDescending { it.average }
     }
 
     private fun parseApiDiaryDays(respObj: JSONObject, filterStudentId: String? = null): List<DaySchedule> {
@@ -1584,23 +1709,39 @@ class EljurApiClient(
         return list
     }
 
-    fun fetchDiaryFromWeb(cookies: String, studentId: String? = null): Result<List<DaySchedule>> {
+    fun fetchDiaryFromWeb(
+        cookies: String,
+        studentId: String? = null,
+        weekOffset: Int = 0
+    ): Result<List<DaySchedule>> {
         return try {
             val cleanStudent = studentId?.removePrefix("u.")
+            val targetDate = getMondayDateForOffset(weekOffset)
+
             val candidateUrls = mutableListOf<String>()
-            if (!cleanStudent.isNullOrBlank()) {
-                candidateUrls.add("$baseUrl/journal-app/u.$cleanStudent")
-                candidateUrls.add("$baseUrl/journal-app/week.0/u.$cleanStudent")
+            if (weekOffset == 0) {
+                if (!cleanStudent.isNullOrBlank()) {
+                    candidateUrls.add("$baseUrl/journal-app/u.$cleanStudent")
+                }
+                candidateUrls.add("$baseUrl/journal-app")
             }
-            candidateUrls.add("$baseUrl/journal-app/week.0")
-            candidateUrls.add("$baseUrl/journal-app")
-            candidateUrls.add("$baseUrl/journal-student-diary-action")
-            candidateUrls.add("$baseUrl/journal-schedule-action")
+
+            if (!cleanStudent.isNullOrBlank()) {
+                candidateUrls.add("$baseUrl/journal-app/u.$cleanStudent?date=$targetDate")
+                candidateUrls.add("$baseUrl/journal-app/week.$weekOffset/u.$cleanStudent")
+                candidateUrls.add("$baseUrl/journal-student-diary-action/u.$cleanStudent?date=$targetDate")
+            }
+            candidateUrls.add("$baseUrl/journal-app?date=$targetDate")
+            candidateUrls.add("$baseUrl/journal-app/week.$weekOffset")
+            candidateUrls.add("$baseUrl/journal-student-diary-action?date=$targetDate")
+            candidateUrls.add("$baseUrl/journal-schedule-action?date=$targetDate")
 
             for (targetUrl in candidateUrls) {
                 val request = buildRequest(targetUrl, cookies, isJson = false)
                 val response = client.newCall(request).execute()
                 val html = response.body?.string() ?: continue
+
+                checkSessionValidity(response, html)
 
                 if (!response.isSuccessful || html.contains("<title>Ошибка") || html.contains("Страница не найдена")) {
                     logResponseError(request, response, html)
@@ -1614,67 +1755,119 @@ class EljurApiClient(
                 }
 
                 val doc = Jsoup.parse(html)
-                val dayElements = doc.select("div.dnevnik-day, div.m-journal__day, div.journal-day, div.day-card, div.dnevnik__day")
-                if (dayElements.isEmpty()) continue
-
-                val list = mutableListOf<DaySchedule>()
-                for (dayElem in dayElements) {
-                    val titleElem = dayElem.selectFirst("div.dnevnik-day__title, .day-title, .m-journal__day-header, .dnevnik__day-title") ?: continue
-                    val parts = titleElem.text().split(", ")
-                    val dayOfWeek = parts.getOrNull(0) ?: ""
-                    val date = parts.getOrNull(1) ?: parts.getOrNull(0) ?: ""
-
-                    val lessons = mutableListOf<Lesson>()
-                    val lessonElems = dayElem.select("div.dnevnik-lesson, div.m-journal__lesson, div.lesson-item, tr.lesson-row, div.journal-lesson, div.dnevnik__lesson")
-                    for (lElem in lessonElems) {
-                        val num = lElem.selectFirst(".dnevnik-lesson__number, .lesson-number, .num")?.text()?.replace(".", "")?.trim()?.toIntOrNull() ?: 1
-                        val time = lElem.selectFirst(".dnevnik-lesson__time, .lesson-time, .time")?.text()?.trim() ?: ""
-                        val subject = lElem.selectFirst(".js-rt_licey-dnevnik-subject, .lesson-subject, .subject-title, .dnevnik-lesson__name, span.subject")?.text()?.trim() ?: "Урок"
-                        val task = lElem.selectFirst(".dnevnik-lesson__task, .lesson-task, .homework-text, .task-description")?.text()?.trim()
-                        val markVal = lElem.selectFirst(".dnevnik-mark, .mark-badge, .grade, .lesson-mark")?.text()?.trim()
-
-                        val marks = if (!markVal.isNullOrEmpty()) listOf(Mark(value = markVal)) else emptyList()
-
-                        val (startTime, endTime) = if (time.contains("-")) {
-                            val times = time.split("-")
-                            times[0].trim() to times.getOrElse(1) { "" }.trim()
-                        } else {
-                            time to ""
-                        }
-
-                        lessons.add(
-                            Lesson(
-                                num = num,
-                                startTime = startTime,
-                                endTime = endTime,
-                                subject = subject,
-                                room = "",
-                                teacher = "",
-                                topic = null,
-                                homework = task,
-                                marks = marks
-                            )
-                        )
-                    }
-
-                    list.add(
-                        DaySchedule(
-                            date = date,
-                            dayOfWeek = dayOfWeek,
-                            lessons = lessons
-                        )
-                    )
-                }
-
-                if (list.isNotEmpty()) {
-                    return Result.success(list)
+                val parsedDays = parseDiaryHtmlCards(doc)
+                if (parsedDays.isNotEmpty()) {
+                    return Result.success(parsedDays)
                 }
             }
 
-            Result.failure(Exception("Пустая HTML страница дневника"))
+            Result.failure(Exception("Не удалось извлечь расписание со страницы дневника"))
         } catch (e: Exception) {
             Result.failure(e)
         }
+    }
+
+    private fun parseDiaryHtmlCards(doc: org.jsoup.nodes.Document): List<DaySchedule> {
+        val dayElements = doc.select("div.dnevnik-day, div.m-journal__day, div.journal-day, div.day-card, div.dnevnik__day, div.journal-app__day, .day_block, .day-container, div.pane-day, .day")
+        val list = mutableListOf<DaySchedule>()
+
+        for (dayElem in dayElements) {
+            val titleElem = dayElem.selectFirst("div.dnevnik-day__title, .day-title, .m-journal__day-header, .dnevnik__day-title, .day-header, .header, h3, h4, .title") ?: continue
+            val titleText = titleElem.text().trim()
+
+            var dayOfWeek = ""
+            var date = ""
+            if (titleText.contains(",")) {
+                val parts = titleText.split(",").map { it.trim() }
+                val ruDays = listOf("Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье")
+                if (ruDays.any { parts[0].contains(it, ignoreCase = true) }) {
+                    dayOfWeek = parts[0]
+                    date = parts.getOrElse(1) { "" }
+                } else {
+                    date = parts[0]
+                    dayOfWeek = parts.getOrElse(1) { "" }
+                }
+            } else {
+                dayOfWeek = getDayOfWeekRussian(titleText).ifBlank { titleText }
+                date = titleText
+            }
+
+            val isHoliday = dayElem.selectFirst(".holiday, .weekend, .vacation, .is-holiday") != null ||
+                    dayElem.text().contains("Каникулы", ignoreCase = true) ||
+                    dayElem.text().contains("Выходной день", ignoreCase = true)
+            val holidayName = if (isHoliday) "Каникулы / Выходной" else null
+
+            val lessons = mutableListOf<Lesson>()
+            val lessonElems = dayElem.select("div.dnevnik-lesson, div.m-journal__lesson, div.lesson-item, tr.lesson-row, div.journal-lesson, div.dnevnik__lesson, div.lesson, tr.lesson")
+
+            for ((idx, lElem) in lessonElems.withIndex()) {
+                val num = lElem.selectFirst(".dnevnik-lesson__number, .lesson-number, .num, .number, td.num")
+                    ?.text()?.replace(".", "")?.filter { it.isDigit() }?.toIntOrNull() ?: (idx + 1)
+
+                val time = lElem.selectFirst(".dnevnik-lesson__time, .lesson-time, .time, td.time, .clock")?.text()?.trim() ?: ""
+                val subject = lElem.selectFirst(".js-rt_licey-dnevnik-subject, .lesson-subject, .subject-title, .dnevnik-lesson__name, span.subject, .subject, .name, td.subject")
+                    ?.text()?.trim() ?: "Урок"
+
+                val roomElem = lElem.selectFirst(".dnevnik-lesson__room, .lesson-room, .room, .cabinet, td.room, .dnevnik-lesson__cabinet")
+                val roomText = roomElem?.text()?.trim() ?: run {
+                    val full = lElem.text()
+                    Regex("""каб\.?\s*([0-9А-Яа-яA-Za-z]+)""").find(full)?.groupValues?.get(1) ?: ""
+                }
+
+                val teacher = lElem.selectFirst(".dnevnik-lesson__teacher, .lesson-teacher, .teacher, .fio, td.teacher")?.text()?.trim() ?: ""
+                val topic = lElem.selectFirst(".dnevnik-lesson__topic, .lesson-topic, .topic, .theme, td.topic")?.text()?.trim()
+                val task = lElem.selectFirst(".dnevnik-lesson__task, .lesson-task, .homework-text, .task-description, .homework, .task, .hometask, td.task")?.text()?.trim()
+
+                val markElems = lElem.select(".dnevnik-mark, .mark-badge, .grade, .lesson-mark, .mark, span.cell-mark, .mark_val, .badge")
+                val marks = mutableListOf<Mark>()
+                for (mElem in markElems) {
+                    val mVal = mElem.ownText().ifBlank { mElem.text() }.trim()
+                    if (mVal.isNotBlank() && mVal.length <= 4) {
+                        val subWeight = mElem.selectFirst("sub")?.text()?.toIntOrNull()
+                            ?: mElem.selectFirst("sup")?.text()?.toIntOrNull()
+                            ?: mElem.attr("data-weight").toIntOrNull()
+                            ?: Regex("""вес[:\s]+(\d+)""", RegexOption.IGNORE_CASE).find(mElem.attr("title"))?.groupValues?.get(1)?.toIntOrNull()
+                            ?: 1
+                        val comment = mElem.attr("title").ifBlank { null }
+                        val isCtrl = subWeight > 1 || (comment?.contains("контроль", true) == true)
+                        marks.add(Mark(value = mVal, weight = subWeight, comment = comment, isControl = isCtrl))
+                    }
+                }
+
+                val (startTime, endTime) = if (time.contains("-") || time.contains("–")) {
+                    val times = time.split(Regex("[-–]"))
+                    times[0].trim() to times.getOrElse(1) { "" }.trim()
+                } else {
+                    time to ""
+                }
+
+                lessons.add(
+                    Lesson(
+                        num = num,
+                        startTime = startTime,
+                        endTime = endTime,
+                        subject = subject,
+                        room = roomText,
+                        teacher = teacher,
+                        topic = topic?.takeIf { it.isNotBlank() },
+                        homework = task?.takeIf { it.isNotBlank() },
+                        marks = marks
+                    )
+                )
+            }
+
+            list.add(
+                DaySchedule(
+                    date = date.ifBlank { titleText },
+                    dayOfWeek = dayOfWeek.ifBlank { "День" },
+                    lessons = lessons,
+                    isHoliday = isHoliday,
+                    holidayName = holidayName
+                )
+            )
+        }
+
+        return list
     }
 
     private fun extractMarksFromHtmlScripts(html: String, studentId: String?): List<SubjectSummary> {
