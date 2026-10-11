@@ -1,0 +1,238 @@
+package com.pixelschool.app.data.remote
+
+import java.io.ByteArrayInputStream
+import java.security.KeyStore
+import java.security.cert.CertificateFactory
+import java.security.cert.X509Certificate
+import java.util.concurrent.TimeUnit
+import javax.net.ssl.SSLContext
+import javax.net.ssl.TrustManagerFactory
+import javax.net.ssl.X509TrustManager
+import okhttp3.OkHttpClient
+
+object RussianTrustManager {
+
+    private const val RUSSIAN_TRUSTED_ROOT_CA = """-----BEGIN CERTIFICATE-----
+MIIFwjCCA6qgAwIBAgICEAAwDQYJKoZIhvcNAQELBQAwcDELMAkGA1UEBhMCUlUx
+PzA9BgNVBAoMNlRoZSBNaW5pc3RyeSBvZiBEaWdpdGFsIERldmVsb3BtZW50IGFu
+ZCBDb21tdW5pY2F0aW9uczEgMB4GA1UEAwwXUnVzc2lhbiBUcnVzdGVkIFJvb3Qg
+Q0EwHhcNMjIwMzAxMjEwNDE1WhcNMzIwMjI3MjEwNDE1WjBwMQswCQYDVQQGEwJS
+VTE/MD0GA1UECgw2VGhlIE1pbmlzdHJ5IG9mIERpZ2l0YWwgRGV2ZWxvcG1lbnQg
+YW5kIENvbW11bmljYXRpb25zMSAwHgYDVQQDDBdSdXNzaWFuIFRydXN0ZWQgUm9v
+dCBDQTCCAiIwDQYJKoZIhvcNAQEBBQADggIPADCCAgoCggIBAMfFOZ8pUAL3+r2n
+qqE0Zp52selXsKGFYoG0GM5bwz1bSFtCt+AZQMhkWQheI3poZAToYJu69pHLKS6Q
+XBiwBC1cvzYmUYKMYZC7jE5YhEU2bSL0mX7NaMxMDmH2/NwuOVRj8OImVa5s1F4U
+zn4Kv3PFlDBjjSjXKVY9kmjUBsXQrIHeaqmUIsPIlNWUnimXS0I0abExqkbdrXbX
+YwCOXhOO2pDUx3ckmJlCMUGacUTnylyQW2VsJIyIGA8V0xzdaeUXg0VZ6ZmNUr5Y
+Ber/EAOLPb8NYpsAhJe2mXjMB/J9HNsoFMBFJ0lLOT/+dQvjbdRZoOT8eqJpWnVD
+U+QL/qEZnz57N88OWM3rabJkRNdU/Z7x5SFIM9FrqtN8xewsiBWBI0K6XFuOBOTD
+4V08o4TzJ8+Ccq5XlCUW2L48pZNCYuBDfBh7FxkB7qDgGDiaftEkZZfApRg2E+M9
+G8wkNKTPLDc4wH0FDTijhgxR3Y4PiS1HL2Zhw7bD3CbslmEGgfnnZojNkJtcLeBH
+BLa52/dSwNU4WWLubaYSiAmA9IUMX1/RpfpxOxd4Ykmhz97oFbUaDJFipIggx5sX
+ePAlkTdWnv+RWBxlJwMQ25oEHmRguNYf4Zr/Rxr9cS93Y+mdXIZaBEE0KS2iLRqa
+OiWBki9IMQU4phqPOBAaG7A+eP8PAgMBAAGjZjBkMB0GA1UdDgQWBBTh0YHlzlpf
+BKrS6badZrHF+qwshzAfBgNVHSMEGDAWgBTh0YHlzlpfBKrS6badZrHF+qwshzAS
+BgNVHRMBAf8ECDAGAQH/AgEEMA4GA1UdDwEB/wQEAwIBhjANBgkqhkiG9w0BAQsF
+AAOCAgEAALIY1wkilt/urfEVM5vKzr6utOeDWCUczmWX/RX4ljpRdgF+5fAIS4vH
+tmXkqpSCOVeWUrJV9QvZn6L227ZwuE15cWi8DCDal3Ue90WgAJJZMfTshN4OI8cq
+W9E4EG9wglbEtMnObHlms8F3CHmrw3k6KmUkWGoa+/ENmcVl68u/cMRl1JbW2bM+
+/3A+SAg2c6iPDlehczKx2oa95QW0SkPPWGuNA/CE8CpyANIhu9XFrj3RQ3EqeRcS
+AQQod1RNuHpfETLU/A2gMmvn/w/sx7TB3W5BPs6rprOA37tutPq9u6FTZOcG1Oqj
+C/B7yTqgI7rbyvox7DEXoX7rIiEqyNNUguTk/u3SZ4VXE2kmxdmSh3TQvybfbnXV
+4JbCZVaqiZraqc7oZMnRoWrXRG3ztbnbes/9qhRGI7PqXqeKJBztxRTEVj8ONs1d
+WN5szTwaPIvhkhO3CO5ErU2rVdUr89wKpNXbBODFKRtgxUT70YpmJ46VVaqdAhOZ
+D9EUUn4YaeLaS8AjSF/h7UkjOibNc4qVDiPP+rkehFWM66PVnP1Msh93tc+taIfC
+EYVMxjh8zNbFuoc7fzvvrFILLe7ifvEIUqSVIC/AzplM/Jxw7buXFeGP1qVCBEHq
+391d/9RAfaZ12zkwFsl+IKwE/OZxW8AHa9i1p4GO0YSNuczzEm4=
+-----END CERTIFICATE-----"""
+
+    private const val RUSSIAN_TRUSTED_SUB_CA = """-----BEGIN CERTIFICATE-----
+MIIHQjCCBSqgAwIBAgICEAIwDQYJKoZIhvcNAQELBQAwcDELMAkGA1UEBhMCUlUx
+PzA9BgNVBAoMNlRoZSBNaW5pc3RyeSBvZiBEaWdpdGFsIERldmVsb3BtZW50IGFu
+ZCBDb21tdW5pY2F0aW9uczEgMB4GA1UEAwwXUnVzc2lhbiBUcnVzdGVkIFJvb3Qg
+Q0EwHhcNMjIwMzAyMTEyNTE5WhcNMjcwMzA2MTEyNTE5WjBvMQswCQYDVQQGEwJS
+VTE/MD0GA1UECgw2VGhlIE1pbmlzdHJ5IG9mIERpZ2l0YWwgRGV2ZWxvcG1lbnQg
+YW5kIENvbW11bmljYXRpb25zMR8wHQYDVQQDDBZSdXNzaWFuIFRydXN0ZWQgU3Vi
+IENBMIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEA9YPqBKOk19NFymrE
+wehzrhBEgT2atLezpduB24mQ7CiOa/HVpFCDRZzdxqlh8drku408/tTmWzlNH/br
+HuQhZ/miWKOf35lpKzjyBd6TPM23uAfJvEOQ2/dnKGGJbsUo1/udKSvxQwVHpVv3
+S80OlluKfhWPDEXQpgyFqIzPoxIQTLZ0deirZwMVHarZ5u8HqHetRuAtmO2ZDGQn
+vVOJYAjls+Hiueq7Lj7Oce7CQsTwVZeP+XQx28PAaEZ3y6sQEt6rL06ddpSdoTMp
+BnCqTbxW+eWMyjkIn6t9GBtUV45yB1EkHNnj2Ex4GwCiN9T84QQjKSr+8f0psGrZ
+vPbCbQAwNFJjisLixnjlGPLKa5vOmNwIh/LAyUW5DjpkCx004LPDuqPpFsKXNKpa
+L2Dm6uc0x4Jo5m+gUTVORB6hOSzWnWDj2GWfomLzzyjG81DRGFBpco/O93zecsIN
+3SL2Ysjpq1zdoS01CMYxie//9zWvYwzI25/OZigtnpCIrcd2j1Y6dMUFQAzAtHE+
+qsXflSL8HIS+IJEFIQobLlYhHkoE3avgNx5jlu+OLYe0dF0Ykx1PGNjbwqvTX37R
+Cn32NMjlotW2QcGEZhDKj+3urZizp5xdTPZitA+aEjZM/Ni71VOdiOP0igbw6asZ
+2fxdozZ1TnSSYNYvNATwthNmZysCAwEAAaOCAeUwggHhMBIGA1UdEwEB/wQIMAYB
+Af8CAQAwDgYDVR0PAQH/BAQDAgGGMB0GA1UdDgQWBBTR4XENCy2BTm6KSo9MI7NM
+X3vt8jAfBgNVHSMEGDAWgBTh0YHlzlpfBKrS6badZrHF+qwshzCBxwYIKwYBBQUH
+AQEEgbswgbgwOgYIKwYBBQUHMAKGLmh0dHA6Ly9yZXBvc2l0b3J5LnJ1c3NpYW50
+cnVzdGVkLnJ1L2NhY2VydC5jcnQwNwYIKwYBBQUHMAGGK2h0dHA6Ly9vY3NwLnJ1
+c3NpYW50cnVzdGVkLnJ1L2NhY2VydC5jcnQvMDE1BggrBgEFBQcwAoYpaHR0cDov
+L3JlcG8uc3Bicy5ydS9jYWNlcnQvdjEtcm9vdC5jcnQwHQYDVR0RBBYwFIISd3d3
+Lmdvc3VzbHVnaS5ydTCCAV8GA1UdHwSCAVcwggFTMDigNqA0hjJodHRwOi8vcmVw
+b3NpdG9yeS5ydXNzaWFudHJ1c3RlZC5ydS9jcmwvdjEtcm9vdC5jcmwwNqA0oDKG
+MGh0dHA6Ly9yZXBvLnNwYnMucnUvY3JsL3YxLXJvb3QuY3JsMDmgN6A1hjNodHRw
+Oi8vY2FjZXJ0cy5nb3N1c2x1Z2kucnUvY3JsL3YxLXJvb3QuY3JsMC+gLaArhilo
+dHRwOi8vd3d3LnJ1cy1jYS5ydS9jcmwvdjEtcm9vdC5jcmwwN6A1oDOGMWh0dHA6
+Ly9yZXBvc2l0b3J5LWF0b2wucnUvY3JsL3YxLXJvb3QuY3JsMDWgM6Axhi9odHRw
+Oi8vY2FjZXJ0cy5zb2xhci5ydS9jcmwvdjEtcm9vdC5jcmwwDQYJKoZIhvcNAQEL
+BQADggIBACsVdD7jDny5w8s95aL2ZgCjBsmR+s9BqFms4+Jk81N4XpYI4729f6V8
+4F+FwIe1V9R74Z75m7Z4v8mY5/Y7+4qY4s+5b0+a5Z26zZg+bV1w7G9z25F280Z
+81/B6Z5N2o6j+5s9z8rFz+8V1g4R6jF8O8Y/Kj+s5f9y6F20sK5F75e7W76a5bF
+3/Jz+2W9Vv1v057fB01sXF4XF2F6K2V3F2+0W4Z+r2V75k6V9g==
+-----END CERTIFICATE-----"""
+
+    private const val RK_GOV_CERT = """-----BEGIN CERTIFICATE-----
+MIIDpTCCAyugAwIBAgISBU4Ruz45939Pq9TRLt6GFxDQMAoGCCqGSM49BAMDMDMx
+CzAJBgNVBAYTAlVTMRYwFAYDVQQKEw1MZXQncyBFbmNyeXB0MQwwCgYDVQQDEwNZ
+RTEwHhcNMjYwNzA0MjIwNTQ2WhcNMjYxMDAyMjIwNTQ1WjAYMRYwFAYDVQQDEw1l
+ZHUucmsuZ292LnJ1MHYwEAYHKoZIzj0CAQYFK4EEACIDYgAEhZiZBPER3icYq9SS
+88tSVsiwYSBu5Jeuq7xJOFi9E14CUNPL2PrsdiPtQveKSKbmcZyA7pbiPm6kre2W
+EPafoX32Valsse89rsBhl3Z4RNrA3yg84ptXjYqP+NTM1zT/o4ICGzCCAhcwDgYD
+VR0PAQH/BAQDAgeAMBMGA1UdJQQMMAoGCCsGAQUFBwMBMAwGA1UdEwEB/wQCMAAw
+HQYDVR0OBBYEFAoxvbTylyyOp1WgEwIpyVwSEhpoMB8GA1UdIwQYMBaAFLsgykcL
+/tflnPmPCSqjjDdFsbzYMDMGCCsGAQUFBwEBBCcwJTAjBggrBgEFBQcwAoYXaHR0
+cDovL3llMS5pLmxlbmNyLm9yZy8wGAYDVR0RBBEwD4INZWR1LnJrLmdvdi5ydTAT
+BgNVHSAEDDAKMAgGBmeBDAECATAuBgNVHR8EJzAlMCOgIaAfhh1odHRwOi8veWUx
+LmMubGVuY3Iub3JnLzgxLmNybDCCAQwGCisGAQQB1nkCBAIEgf0EgfoA+AB2ANdt
+fRDRp/V3wsfpX9cAv/mCyTNaZeHQswFzF8DIxWl3AAABny9gIMwAAAQDAEcwRQIg
+UHAguyr9a/+1czAQXac4Cgn+NGhWeptZGGswdhZ+R/4CIQDOEe3PclkoM0Js2CAO
+/7MiHBmz8BJ5Pz9oEs0kxd00fAB+AKgmy+MKxjUSRlM/4GXxTxnZbhkIE8Qd2W15
+ALMSPFUnAAABny9gIocACAAABQAScUmZBAMARzBFAiBGLZf26y4kQB1mdSPEEgRy
+AfG04oBeb4oxVVEUE45cIQIhAOk19DBu5Z5fBCy5IlLIkVVIOzXsloflfHWWolTD
+aMjMMAoGCCqGSM49BAMDA2gAMGUCMGnm8vj5ymhCQo//IRc+2DOa7nkQKm1ZFX78
+QzPb2S5JLiilC5hRH80+k5Y7MI2hxgIxAIFbpeIO1LtR9QHg3dBnZrQw/FHjI7W7
++oith/l+szBDoUItP/2wKRhh3RwI4rvf3A==
+-----END CERTIFICATE-----"""
+
+    private const val ELJUR_CERT = """-----BEGIN CERTIFICATE-----
+MIIGUDCCBTigAwIBAgIMARc42ww4lKAX7VxIMA0GCSqGSIb3DQEBCwUAMFUxCzAJ
+BgNVBAYTAkJFMRkwFwYDVQQKExBHbG9iYWxTaWduIG52LXNhMSswKQYDVQQDEyJH
+bG9iYWxTaWduIEdDQyBSNiBBbHBoYVNTTCBDQSAyMDIzMB4XDTI1MDQwNzEyMjcx
+MloXDTI2MDUwOTEyMjcxMVowFTETMBEGA1UEAwwKKi5lbGp1ci5ydTCCASIwDQYJ
+KoZIhvcNAQEBBQADggEPADCCAQoCggEBALi8U7By1uFKriSzhAMZqddHiOOlm/pf
+MJ196rxoabf/yeIpuH1kkLAHTbvnP0/PGu4bgcAiEjX9+igJ8DRIHUJYCiGNKZr5
+pEsiqQf3BAUtPB5xdguPLGATWBBvsTHs3uryTECxU30+ygCWMnSO3YKKilU83y3K
+0bSFTbNdL27Obr5cJQqy7EHk5gpZZdCyQHDHuYxCXqFCyHzdAT5CgW2c9XO3mZ6V
+ks8RmGzItVfzsqkquRh6QkwYgaE8pGxX3ONk4TrnudvF+o95+2ZbGC4JNqDs7lyU
+finCXF4+darKh+Q3yryoL95EspWXOqQuE1xkkC+wHBxIKA/5t7E83Q0CAwEAAaOC
+A14wggNaMA4GA1UdDwEB/wQEAwIFoDAMBgNVHRMBAf8EAjAAMIGZBggrBgEFBQcB
+AQSBjDCBiTBJBggrBgEFBQcwAoY9aHR0cDovL3NlY3VyZS5nbG9iYWxzaWduLmNv
+bS9jYWNlcnQvZ3NnY2NyNmFscGhhc3NsY2EyMDIzLmNydDA8BggrBgEFBQcwAYYw
+aHR0cDovL29jc3AuZ2xvYmFsc2lnbi5jb20vZ3NnY2NyNmFscGhhc3NsY2EyMDIz
+MFcGA1UdIARQME4wCAYGZ4EMAQIBMEIGCisGAQQBoDIKAQMwNDAyBggrBgEFBQcC
+ARYmaHR0cHM6Ly93d3cuZ2xvYmFsc2lnbi5jb20vcmVwb3NpdG9yeS8wRAYDVR0f
+BD0wOzA5oDegNYYzaHR0cDovL2NybC5nbG9iYWxzaWduLmNvbS9nc2djY3I2YWxw
+aGFzc2xjYTIwMjMuY3JsMB8GA1UdEQQYMBaCCiouZWxqdXIucnWCCGVsanVyLnJ1
+MB0GA1UdJQQWMBQGCCsGAQUFBwMBBggrBgEFBQcDAjAfBgNVHSMEGDAWgBS9Bbfz
+ipM8c8t5+g+FEqF3lhiRdDAdBgNVHQ4EFgQUvBGWn778xgicBI4YhQ5HLGo/0+gw
+ggF9BgorBgEEAdZ5AgQCBIIBbQSCAWkBZwB2AGQRxGykEuyniRyiAi4AvKtPKAfU
+HjUnq+r+1QPJfc3wAAABlhA4IkgAAAQDAEcwRQIgN0j/rP6ukz2kQKBdO7hzl0sN
+PXtG0d8zu2XJHt5bLR0CIQCNLSNu/o/buJNfAO0x4xB1cjv0Nq/Z+GgslKjMpyhS
++gB1AMs49xWJfIShRF9bwd37yW7ymlnNRwppBYWwyxTDFFjnAAABlhA4INkAAAQD
+AEYwRAIgFteXEgnNk0oSeXlEXuB5sZQRIFdkzc4KVHC2q2f5whMCIHYdNZMsyAkh
+k1lTgInF0YRGU2RtWvM2BqMgBZCp1J+aAHYAJS+Uwisp6W6fQRpyBytpXFtS/5ep
+DSVAu/zcUexN7gsAAAGWEDgiiQAABAMARzBFAiB5Xet2ibiDgPi4DzUXTmnnuXVV
+7EP7OdDdlntrn3SDtwIhANjy9v4tHuXoAIp+jPLOTWmxA5MQB4NydmQdNWPxU4Oa
+MA0GCSqGSIb3DQEBCwUAA4IBAQByHFPfKxNboEkAEuIoZc/c5L/mDZdHdDRZSm6s
+2ZxInpzM+rE+bZ+MtnxOToyIA5emVRcSKZjJxh+QZAnL+VrrsbQSvvxycM6bAQVd
+1c4jpO32ZgqZD/HIc/HAYv5TcGN7WbOy1YIikqsKlgpkCFO+8E6ZJgB1VK5MM2ll
+V8pdRO6haHYXwzWVb1K9lz/WUb/si0fqZMpKzpc06VoRKCvX0Jpv2wCa9yg4V+Fr
+TdRfYoB0EM7m1NQ2asjMeP0Ou6gGZPWnV1lIxufPvaUWpegfYFk/XDT5URbL5SQb
+INThSwQ5SuIrLFFvGHPC70/CVO2bpcQpqGyBN9IXe8I7fBf5
+-----END CERTIFICATE-----"""
+
+    private const val GU_CERT = """-----BEGIN CERTIFICATE-----
+MIIGSDCCBTCgAwIBAgIMHMbq4wCffSedl1RxMA0GCSqGSIb3DQEBCwUAMFMxCzAJ
+BgNVBAYTAkJFMRkwFwYDVQQKExBHbG9iYWxTaWduIG52LXNhMSkwJwYDVQQDEyBH
+bG9iYWxTaWduIEdDQyBSMyBEViBUTFMgQ0EgMjAyMDAeFw0yNTA1MDcxMTQyMDFa
+Fw0yNjA2MDgxMDA5MDhaMBcxFTATBgNVBAMTDHd3dy5ndS1zdC5ydTCCASIwDQYJ
+KoZIhvcNAQEBBQADggEPADCCAQoCggEBAN7AphbXdmY11O+zwg0HOX6DLgd4pseR
+gsoqmXbx6xDOw0nJMW0qJhVr8LAxafooACF+m6Vm+yspouirzKfd4opmTV8P4MxB
+Bid25VyKp3wb+89WZEyA1UDEHlilDho+XCdIMux/YtG22CLfXdKhqYXD9vtqFOS5
+XoPeAFwn/TECw0lxZtaXSdMhymOplB3Gf9VAi9gWSCkGVjbYPj0GOibDBG8EShPW
+VhJHUeIeJkAW307JVr7IpSnI9IzlvpLa9ZlPuxWHnT8r5EkrsPiXGia61Fb73DQj
+81DlPOZBllO8EHmnoQKCzLny4ystlKtZb3mh6lBcIKONPLwWcl3edYMCAwEAAaOC
+A1YwggNSMA4GA1UdDwEB/wQEAwIFoDAMBgNVHRMBAf8EAjAAMIGTBggrBgEFBQcB
+AQSBhjCBgzBGBggrBgEFBQcwAoY6aHR0cDovL3NlY3VyZS5nbG9iYWxzaWduLmNv
+bS9jYWNlcnQvZ3NnY2NyM2R2dGxzY2EyMDIwLmNydDA5BggrBgEFBQcwAYYtaHR0
+cDovL29jc3AuZ2xvYmFsc2lnbi5jb20vZ3NnY2NyM2R2dGxzY2EyMDIwMFYGA1Ud
+IARPME0wQQYJKwYBBAGgMgEKMDQwMgYIKwYBBQUHAgEWJmh0dHBzOi8vd3d3Lmds
+b2JhbHNpZ24uY29tL3JlcG9zaXRvcnkvMAgGBmeBDAECATBBBgNVHR8EOjA4MDag
+NKAyhjBodHRwOi8vY3JsLmdsb2JhbHNpZ24uY29tL2dzZ2NjcjNkdnRsc2NhMjAy
+MC5jcmwwIQYDVR0RBBowGIIMd3d3Lmd1LXN0LnJ1gghndS1zdC5ydTAdBgNVHSUE
+FjAUBggrBgEFBQcDAQYIKwYBBQUHAwIwHwYDVR0jBBgwFoAUDZjAc3+rvb3ZR0tJ
+rQpKDKw+x3wwHQYDVR0OBBYEFKoFw0A0oTP9/9un9YhSh1TnMtd7MIIBfQYKKwYB
+BAHWeQIEAgSCAW0EggFpAWcAdgAZhtTHKKpv/roDb3gqTQGRqs4tcjEPrs5dcEEt
+JUzH1AAAAZaqjZBEAAAEAwBHMEUCIHrHL+jqp9N4Cz4s5XhRtv0zh+hLv3fcWXzA
+aSA5f8QjAiEAodd/BNqTdCKznChOwd7uYdbWfbyJB2l3BP6eiwOOXkAAdgDLOPcV
+iXyEoURfW8Hd+8lu8ppZzUcKaQWFsMsUwxRY5wAAAZaqjZBUAAAEAwBHMEUCIQDL
+Ws+xE215A4RJ8NNObjMoKPiKa1P66cesymG6WiBLNwIgcNwizZg1XDLEp10e5Ihi
+PO0toSKtHhFnVcgLX4GMBSUAdQBJnJtp3h187Pw23s2HZKa4W68Kh4AZ0VVS++nr
+Kd34wwAAAZaqjZBIAAAEAwBGMEQCIC87qvEN2n+N6RHhqyYI54P+00lcMh4ajRey
+26EEVGcWAiApZUsHPkKObxoDCLG/SVz6VNiW7e7KllSlaVsWlvRv/zANBgkqhkiG
+9w0BAQsFAAOCAQEAec/q5e8Ry/x9F5NQWF6GgwjakSdHbxtxpE5PT/1xftcu2jer
+nkXVCg3/X8LzgrAMrVOw+F/UHuD3daQIfpPQqCBF8t55gVEXdPcdKZw3ZLrGcixm
+9aWAIZV1EveizvMWoDimEN1rcpz5BDQ6PoHcLWFtMZyJHyKkCr2J9h6WmE0vFOwF
+g41XdZDfh+tp6etXUxWEr8Owoin20vYi13OEYav0uc9lNpjRy+nzFGFLqjk6vEn+
+3b+qFLrPTdF+I6FBV793rH72pkOep0eTEH6WikSSdOd4i3jSC6GR5UL4CnoyrRde
+f+rgTMs77slKY+jyEZXRgcdVRnm5xd3kJlHxCg==
+-----END CERTIFICATE-----"""
+
+    private val bundledPems = listOf(
+        RUSSIAN_TRUSTED_ROOT_CA,
+        RUSSIAN_TRUSTED_SUB_CA,
+        RK_GOV_CERT,
+        ELJUR_CERT,
+        GU_CERT
+    )
+
+    fun createTrustManager(): X509TrustManager {
+        val cf = CertificateFactory.getInstance("X.509")
+        val keyStore = KeyStore.getInstance(KeyStore.getDefaultType()).apply {
+            load(null, null)
+        }
+
+        // 1. Add all system default trust manager certificates
+        val defaultTmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm())
+        defaultTmf.init(null as KeyStore?)
+        var counter = 0
+        for (tm in defaultTmf.trustManagers) {
+            if (tm is X509TrustManager) {
+                for (cert in tm.acceptedIssuers) {
+                    keyStore.setCertificateEntry("system_${counter++}", cert)
+                }
+            }
+        }
+
+        // 2. Add bundled Russian / Regional certificates
+        for ((idx, pem) in bundledPems.withIndex()) {
+            try {
+                val cert = cf.generateCertificate(ByteArrayInputStream(pem.trim().toByteArray(Charsets.UTF_8))) as? X509Certificate
+                if (cert != null) {
+                    keyStore.setCertificateEntry("bundled_ru_$idx", cert)
+                }
+            } catch (_: Exception) {}
+        }
+
+        val customTmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm())
+        customTmf.init(keyStore)
+        return customTmf.trustManagers.filterIsInstance<X509TrustManager>().first()
+    }
+
+    fun createOkHttpClient(): OkHttpClient {
+        val trustManager = createTrustManager()
+        val sslContext = SSLContext.getInstance("TLS").apply {
+            init(null, arrayOf(trustManager), null)
+        }
+
+        return OkHttpClient.Builder()
+            .sslSocketFactory(sslContext.socketFactory, trustManager)
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .readTimeout(20, TimeUnit.SECONDS)
+            .followRedirects(true)
+            .build()
+    }
+}

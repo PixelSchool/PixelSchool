@@ -2,7 +2,9 @@ package com.pixelschool.app.ui.screens
 
 import android.annotation.SuppressLint
 import android.graphics.Bitmap
+import android.net.http.SslError
 import android.webkit.CookieManager
+import android.webkit.SslErrorHandler
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -269,11 +271,17 @@ fun GosuslugiAuthDialog(
                             settings.javaScriptEnabled = true
                             settings.domStorageEnabled = true
 
-                            // Strip Android WebView markers matching ru.eljur.region official app
-                            val currentUa = settings.userAgentString
-                            settings.userAgentString = currentUa
-                                .replace(Regex("(Version.*\\s)Chrome"), "Chrome")
-                                .replace(Regex(";\\s+wv"), "")
+                            // Complete modern mobile Google Chrome emulation matching official app
+                            val chromeUserAgent = "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.6723.102 Mobile Safari/537.36"
+                            settings.userAgentString = chromeUserAgent
+
+                            val chromeHeaders = mapOf(
+                                "User-Agent" to chromeUserAgent,
+                                "sec-ch-ua" to "\"Chromium\";v=\"130\", \"Google Chrome\";v=\"130\", \"Not?A_Brand\";v=\"99\"",
+                                "sec-ch-ua-mobile" to "?1",
+                                "sec-ch-ua-platform" to "\"Android\"",
+                                "Accept-Language" to "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7"
+                            )
 
                             val cookieManager = CookieManager.getInstance()
                             cookieManager.setAcceptCookie(true)
@@ -381,10 +389,24 @@ fun GosuslugiAuthDialog(
                                     super.onPageFinished(view, url)
                                     checkAndCapture(url, isPageFinished = true)
                                 }
+
+                                override fun onReceivedSslError(view: WebView?, handler: SslErrorHandler?, error: SslError?) {
+                                    val failingUrl = error?.url.orEmpty()
+                                    // Bypass SSL errors for Russian Root CA / regional portal domains
+                                    if (failingUrl.contains("rk.gov.ru") ||
+                                        failingUrl.contains("gosuslugi.ru") ||
+                                        failingUrl.contains("eljur.ru") ||
+                                        failingUrl.contains("gu-st.ru")
+                                    ) {
+                                        handler?.proceed()
+                                    } else {
+                                        super.onReceivedSslError(view, handler, error)
+                                    }
+                                }
                             }
 
-                            // Official flow=v2 used by ru.eljur.region
-                            loadUrl("https://edu.rk.gov.ru/journal-esia-region-action?flow=v2")
+                            // Official flow=v2 used by ru.eljur.region with full Chrome headers
+                            loadUrl("https://edu.rk.gov.ru/journal-esia-region-action?flow=v2", chromeHeaders)
                         }
                     },
                     modifier = Modifier.fillMaxSize()
