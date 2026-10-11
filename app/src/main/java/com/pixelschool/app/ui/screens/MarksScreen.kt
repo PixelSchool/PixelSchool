@@ -96,7 +96,7 @@ fun MarksScreen(
                     val pm = s.periodMarks[selectedTabIndex]
                     s.copy(average = pm.average, marks = pm.marks, finalMark = pm.finalMark)
                 } else {
-                    s
+                    s.copy(average = 0f, marks = emptyList(), finalMark = null)
                 }
             }
         }
@@ -625,6 +625,13 @@ fun SubjectMarkCard(
                         ExpressiveGradeBadge(value = mark.value)
                     }
                 }
+            } else {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Нет оценок",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.outline
+                )
             }
         }
     }
