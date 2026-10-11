@@ -260,6 +260,230 @@ object MockDataProvider {
                 dayOfWeek = "Суббота",
                 isHoliday = true,
                 holidayName = "Выходной день"
+            ),
+            DaySchedule(
+                date = "18.10.2026",
+                dayOfWeek = "Воскресенье",
+                isHoliday = true,
+                holidayName = "Выходной день"
+            )
+        )
+    }
+
+    fun getNextWeekSchedule(): List<DaySchedule> {
+        return listOf(
+            DaySchedule(
+                date = "19.10.2026",
+                dayOfWeek = "Понедельник",
+                lessons = listOf(
+                    Lesson(
+                        num = 1,
+                        startTime = "08:30",
+                        endTime = "09:15",
+                        subject = "Русский язык",
+                        room = "Каб. 18",
+                        teacher = "Морозова О. А.",
+                        topic = "Сложносочиненные предложения"
+                    ),
+                    Lesson(
+                        num = 2,
+                        startTime = "09:25",
+                        endTime = "10:10",
+                        subject = "Алгебра и начала анализа",
+                        room = "Каб. 24",
+                        teacher = "Соколова Е. В.",
+                        topic = "Исследование функций с помощью производной"
+                    ),
+                    Lesson(
+                        num = 3,
+                        startTime = "10:30",
+                        endTime = "11:15",
+                        subject = "Физика",
+                        room = "Каб. 31",
+                        teacher = "Петров А. Н.",
+                        topic = "Тепловые явления"
+                    ),
+                    Lesson(
+                        num = 4,
+                        startTime = "11:35",
+                        endTime = "12:20",
+                        subject = "История России",
+                        room = "Каб. 22",
+                        teacher = "Воронов С. П.",
+                        topic = "Реформы Петра I"
+                    ),
+                    Lesson(
+                        num = 5,
+                        startTime = "12:35",
+                        endTime = "13:20",
+                        subject = "Иностранный язык (Английский)",
+                        room = "Каб. 35",
+                        teacher = "Браун М. В.",
+                        topic = "Environmental Protection"
+                    )
+                )
+            ),
+            DaySchedule(
+                date = "20.10.2026",
+                dayOfWeek = "Вторник",
+                lessons = listOf(
+                    Lesson(
+                        num = 1,
+                        startTime = "08:30",
+                        endTime = "09:15",
+                        subject = "Геометрия",
+                        room = "Каб. 24",
+                        teacher = "Соколова Е. В.",
+                        topic = "Взаимное расположение прямых и плоскостей"
+                    ),
+                    Lesson(
+                        num = 2,
+                        startTime = "09:25",
+                        endTime = "10:10",
+                        subject = "Литература",
+                        room = "Каб. 18",
+                        teacher = "Морозова О. А.",
+                        topic = "Анализ поэтического текста"
+                    ),
+                    Lesson(
+                        num = 3,
+                        startTime = "10:30",
+                        endTime = "11:15",
+                        subject = "Химия",
+                        room = "Каб. 29",
+                        teacher = "Громова Т. М.",
+                        topic = "Скорость химических реакций"
+                    ),
+                    Lesson(
+                        num = 4,
+                        startTime = "11:35",
+                        endTime = "12:20",
+                        subject = "Физическая культура",
+                        room = "Спортзал",
+                        teacher = "Сидоров В. К.",
+                        topic = "Спортивные игры: баскетбол"
+                    )
+                )
+            ),
+            DaySchedule(
+                date = "21.10.2026",
+                dayOfWeek = "Среда",
+                lessons = listOf(
+                    Lesson(
+                        num = 1,
+                        startTime = "08:30",
+                        endTime = "09:15",
+                        subject = "Обществознание",
+                        room = "Каб. 22",
+                        teacher = "Воронов С. П.",
+                        topic = "Правовое государство"
+                    ),
+                    Lesson(
+                        num = 2,
+                        startTime = "09:25",
+                        endTime = "10:10",
+                        subject = "Алгебра и начала анализа",
+                        room = "Каб. 24",
+                        teacher = "Соколова Е. В.",
+                        topic = "Наибольшее и наименьшее значение функции"
+                    ),
+                    Lesson(
+                        num = 3,
+                        startTime = "10:30",
+                        endTime = "11:15",
+                        subject = "Биология",
+                        room = "Каб. 27",
+                        teacher = "Лебедева Н. А.",
+                        topic = "Эволюционная теория"
+                    ),
+                    Lesson(
+                        num = 4,
+                        startTime = "11:35",
+                        endTime = "12:20",
+                        subject = "География",
+                        room = "Каб. 19",
+                        teacher = "Орлова Ю. В.",
+                        topic = "География населения мира"
+                    )
+                )
+            ),
+            DaySchedule(
+                date = "22.10.2026",
+                dayOfWeek = "Четверг",
+                lessons = listOf(
+                    Lesson(
+                        num = 1,
+                        startTime = "08:30",
+                        endTime = "09:15",
+                        subject = "Физика",
+                        room = "Каб. 31",
+                        teacher = "Петров А. Н.",
+                        topic = "Электромагнитные колебания"
+                    ),
+                    Lesson(
+                        num = 2,
+                        startTime = "09:25",
+                        endTime = "10:10",
+                        subject = "Информатика",
+                        room = "Каб. 12",
+                        teacher = "Ковалев Д. И.",
+                        topic = "Деревья и бинарный поиск"
+                    ),
+                    Lesson(
+                        num = 3,
+                        startTime = "10:30",
+                        endTime = "11:15",
+                        subject = "Геометрия",
+                        room = "Каб. 24",
+                        teacher = "Соколова Е. В.",
+                        topic = "Параллельность плоскостей"
+                    )
+                )
+            ),
+            DaySchedule(
+                date = "23.10.2026",
+                dayOfWeek = "Пятница",
+                lessons = listOf(
+                    Lesson(
+                        num = 1,
+                        startTime = "08:30",
+                        endTime = "09:15",
+                        subject = "Литература",
+                        room = "Каб. 18",
+                        teacher = "Морозова О. А.",
+                        topic = "Русская драматургия"
+                    ),
+                    Lesson(
+                        num = 2,
+                        startTime = "09:25",
+                        endTime = "10:10",
+                        subject = "Иностранный язык (Английский)",
+                        room = "Каб. 35",
+                        teacher = "Браун М. В.",
+                        topic = "Grammar: Conditionals"
+                    ),
+                    Lesson(
+                        num = 3,
+                        startTime = "10:30",
+                        endTime = "11:15",
+                        subject = "ОБЖ",
+                        room = "Каб. 14",
+                        teacher = "Сергеев В. И.",
+                        topic = "Безопасность в чрезвычайных ситуациях"
+                    )
+                )
+            ),
+            DaySchedule(
+                date = "24.10.2026",
+                dayOfWeek = "Суббота",
+                isHoliday = true,
+                holidayName = "Выходной день"
+            ),
+            DaySchedule(
+                date = "25.10.2026",
+                dayOfWeek = "Воскресенье",
+                isHoliday = true,
+                holidayName = "Выходной день"
             )
         )
     }

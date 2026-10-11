@@ -12,9 +12,12 @@ import com.pixelschool.app.data.model.UserSession
 import com.pixelschool.app.data.remote.AuthCredentials
 import com.pixelschool.app.data.remote.EljurApiClient
 import com.pixelschool.app.data.local.CacheStore
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 
 class DiaryRepository(
     private val sessionStore: SessionStore,
@@ -30,6 +33,11 @@ class DiaryRepository(
         val demo = MockDataProvider.demoSession
         sessionStore.saveSession(demo)
         _session.value = demo
+        cacheStore?.saveScheduleCache(0, MockDataProvider.getWeekSchedule())
+        cacheStore?.saveScheduleCache(-1, MockDataProvider.getNextWeekSchedule())
+        if (context != null) {
+            com.pixelschool.app.widget.ScheduleWidgetProvider.updateAllWidgets(context)
+        }
         return demo
     }
 
@@ -129,8 +137,15 @@ class DiaryRepository(
         val currentSession = _session.value
             ?: throw IllegalStateException("Сессия не найдена. Требуется авторизация.")
         if (currentSession.isDemo) {
-            val demoSchedule = MockDataProvider.getWeekSchedule()
+            val demoSchedule = if (weekOffset == -1) {
+                MockDataProvider.getNextWeekSchedule()
+            } else {
+                MockDataProvider.getWeekSchedule()
+            }
             cacheStore?.saveScheduleCache(weekOffset, demoSchedule)
+            if (weekOffset == 0) {
+                cacheStore?.saveScheduleCache(-1, MockDataProvider.getNextWeekSchedule())
+            }
             if (context != null) {
                 com.pixelschool.app.widget.ScheduleWidgetProvider.updateAllWidgets(context)
             }
@@ -162,6 +177,28 @@ class DiaryRepository(
             val list = remoteResult.getOrThrow()
             cacheStore?.saveScheduleCache(weekOffset, list)
             cacheStore?.saveLastSyncTime()
+            if (weekOffset == 0) {
+                // Prefetch next week for widget navigation
+                CoroutineScope(Dispatchers.IO).launch {
+                    try {
+                        val nextWeekRange = apiClient.getWeekRangeForOffset(-1)
+                        val nextResult = apiClient.fetchDiary(
+                            token = activeSession.token,
+                            vendor = activeSession.vendor,
+                            studentId = activeSession.studentId.ifBlank { null },
+                            days = nextWeekRange,
+                            cookies = sessionStore.getCookies(),
+                            weekOffset = -1
+                        )
+                        if (nextResult.isSuccess) {
+                            cacheStore?.saveScheduleCache(-1, nextResult.getOrThrow())
+                            if (context != null) {
+                                com.pixelschool.app.widget.ScheduleWidgetProvider.updateAllWidgets(context)
+                            }
+                        }
+                    } catch (_: Exception) {}
+                }
+            }
             if (context != null) {
                 com.pixelschool.app.widget.ScheduleWidgetProvider.updateAllWidgets(context)
             }

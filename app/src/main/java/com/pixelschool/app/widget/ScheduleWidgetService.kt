@@ -7,7 +7,6 @@ import android.view.View
 import android.widget.RemoteViews
 import android.widget.RemoteViewsService
 import com.pixelschool.app.R
-import com.pixelschool.app.data.local.CacheStore
 import com.pixelschool.app.data.model.Lesson
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -39,8 +38,7 @@ class ScheduleWidgetFactory(
     }
 
     private fun loadData() {
-        val cacheStore = CacheStore(context)
-        val scheduleList = cacheStore.getScheduleCache(0) ?: emptyList()
+        val scheduleList = ScheduleWidgetProvider.getCombinedSchedule(context)
         if (scheduleList.isEmpty()) {
             lessons = emptyList()
             return
@@ -49,7 +47,12 @@ class ScheduleWidgetFactory(
         val prefs = context.getSharedPreferences("pixel_school_widget_prefs", Context.MODE_PRIVATE)
         val todayDateFormat = SimpleDateFormat("dd.MM.yyyy", Locale.getDefault())
         val todayStr = todayDateFormat.format(Date())
-        val todayIndex = scheduleList.indexOfFirst { it.date == todayStr }.takeIf { it >= 0 } ?: 0
+        val todayDayOfWeekFormat = SimpleDateFormat("EEEE", Locale("ru"))
+        val todayDayOfWeek = todayDayOfWeekFormat.format(Date()).replaceFirstChar { it.uppercase() }
+
+        val todayIndex = scheduleList.indexOfFirst { it.date == todayStr }.takeIf { it >= 0 }
+            ?: scheduleList.indexOfFirst { it.dayOfWeek.equals(todayDayOfWeek, ignoreCase = true) }.takeIf { it >= 0 }
+            ?: 0
 
         val selectedIndex = prefs.getInt("widget_day_index_$appWidgetId", todayIndex)
         val effectiveDay = if (selectedIndex in scheduleList.indices) {
