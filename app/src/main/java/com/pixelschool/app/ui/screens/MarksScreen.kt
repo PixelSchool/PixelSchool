@@ -25,10 +25,13 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.PrimaryScrollableTabRow
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -111,39 +114,31 @@ fun MarksScreen(
             .fillMaxSize()
             .padding(16.dp)
     ) {
-        // Compact Academic Period Selector Tabs
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        // Canonical M3 Academic Period Selector Tabs
+        PrimaryScrollableTabRow(
+            selectedTabIndex = selectedTabIndex,
+            edgePadding = 0.dp,
+            divider = {},
+            containerColor = Color.Transparent,
+            modifier = Modifier.fillMaxWidth()
         ) {
             allTabs.forEachIndexed { index, title ->
-                val isSelected = index == selectedTabIndex
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHighest,
-                    modifier = Modifier
-                        .height(36.dp)
-                        .clickable {
-                            selectedTabIndex = index
-                            if (index < periodTitles.size) {
-                                onSelectPeriod(index)
-                            }
+                Tab(
+                    selected = index == selectedTabIndex,
+                    onClick = {
+                        selectedTabIndex = index
+                        if (index < periodTitles.size) {
+                            onSelectPeriod(index)
                         }
-                ) {
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
-                    ) {
+                    },
+                    text = {
                         Text(
                             text = title,
-                            style = MaterialTheme.typography.labelMedium,
-                            color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
-                            fontWeight = FontWeight.Bold
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = if (index == selectedTabIndex) FontWeight.Bold else FontWeight.Medium
                         )
                     }
-                }
+                )
             }
         }
 
