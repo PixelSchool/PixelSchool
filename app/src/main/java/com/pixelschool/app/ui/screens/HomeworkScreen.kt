@@ -227,41 +227,19 @@ fun HomeworkScreen(
                 }
             }
 
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            IconButton(
+                onClick = {
+                    onChangeWeekOffset(-1)
+                    selectedDayIndex = 0
+                },
+                modifier = Modifier.size(32.dp)
             ) {
-                val defaultOffset = HomeworkDateUtils.calculateDefaultWeekOffset()
-                val isDefaultActive = weekOffset == defaultOffset && selectedDayIndex == HomeworkDateUtils.calculateDefaultDayIndex()
-
-                if (!isDefaultActive) {
-                    IconButton(
-                        onClick = {
-                            onResetWeekOffset()
-                            selectedDayIndex = HomeworkDateUtils.calculateDefaultDayIndex()
-                        },
-                        modifier = Modifier.size(32.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Today,
-                            contentDescription = "Сегодня",
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-                }
-
-                IconButton(
-                    onClick = { onChangeWeekOffset(-1) },
-                    modifier = Modifier.size(32.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Rounded.ArrowForwardIos,
-                        contentDescription = "Следующая неделя",
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
+                Icon(
+                    imageVector = Icons.AutoMirrored.Rounded.ArrowForwardIos,
+                    contentDescription = "Следующая неделя",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp)
+                )
             }
         }
 

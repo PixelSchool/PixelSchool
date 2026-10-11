@@ -675,21 +675,3 @@ fun GradesTabRow(
         }
     }
 }
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun GradesScreen(
-    subjects: List<SubjectSummary>,
-    periods: List<AcademicPeriod> = emptyList(),
-    selectedPeriodIndex: Int = 0,
-    onSelectPeriod: (Int) -> Unit = {},
-    modifier: Modifier = Modifier
-) {
-    MarksScreen(
-        subjects = subjects,
-        periods = periods,
-        selectedPeriodIndex = selectedPeriodIndex,
-        onSelectPeriod = onSelectPeriod,
-        modifier = modifier
-    )
-}
