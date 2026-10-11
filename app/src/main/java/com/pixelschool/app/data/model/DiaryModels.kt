@@ -9,7 +9,8 @@ data class UserSession(
     val login: String = "",
     val userTitle: String = "",
     val schoolTitle: String = "",
-    val isDemo: Boolean = false
+    val isDemo: Boolean = false,
+    val studentId: String = ""
 )
 
 @Serializable
