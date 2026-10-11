@@ -205,6 +205,9 @@ class MainViewModel(
 
     fun changeWeekOffset(offsetDelta: Int) {
         val newOffset = _currentWeekOffset.value + offsetDelta
+        if (offsetDelta < 0) {
+            _selectedDayIndex.value = 0
+        }
         setWeekOffset(newOffset)
     }
 

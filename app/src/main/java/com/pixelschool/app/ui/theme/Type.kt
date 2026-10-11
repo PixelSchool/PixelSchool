@@ -28,6 +28,3 @@ val AppTypography = Typography(
     labelMedium = TextStyle(fontFamily = GoogleSans, fontWeight = FontWeight.Medium, fontSize = 12.sp, lineHeight = 16.sp),
     labelSmall = TextStyle(fontFamily = GoogleSans, fontWeight = FontWeight.Medium, fontSize = 11.sp, lineHeight = 16.sp)
 )
-
-val Typography = AppTypography
-val ExpressiveTypography = AppTypography
