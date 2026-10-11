@@ -112,40 +112,29 @@ fun MarksScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(16.dp)
+            .padding(top = 6.dp)
     ) {
-        // Canonical M3 Academic Period Selector Tabs
-        PrimaryScrollableTabRow(
+        // Canonical M3 Grades Tabs with edgePadding = 16.dp
+        GradesTabRow(
             selectedTabIndex = selectedTabIndex,
-            edgePadding = 0.dp,
-            divider = {},
-            containerColor = Color.Transparent,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            allTabs.forEachIndexed { index, title ->
-                Tab(
-                    selected = index == selectedTabIndex,
-                    onClick = {
-                        selectedTabIndex = index
-                        if (index < periodTitles.size) {
-                            onSelectPeriod(index)
-                        }
-                    },
-                    text = {
-                        Text(
-                            text = title,
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = if (index == selectedTabIndex) FontWeight.Bold else FontWeight.Medium
-                        )
-                    }
-                )
+            tabs = allTabs,
+            onTabSelected = { index ->
+                selectedTabIndex = index
+                if (index < periodTitles.size) {
+                    onSelectPeriod(index)
+                }
             }
-        }
+        )
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(10.dp))
 
-        // Hero Overall GPA Card
-        Card(
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 16.dp)
+        ) {
+            // Hero Overall GPA Card
+            Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(24.dp),
             colors = CardDefaults.cardColors(
@@ -284,6 +273,7 @@ fun MarksScreen(
             }
         }
     }
+}
 
     selectedSubject?.let { subject ->
         ModalBottomSheet(
@@ -634,4 +624,49 @@ fun SubjectMarkCard(
             }
         }
     }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun GradesTabRow(
+    selectedTabIndex: Int,
+    tabs: List<String>,
+    onTabSelected: (Int) -> Unit
+) {
+    PrimaryScrollableTabRow(
+        selectedTabIndex = selectedTabIndex,
+        edgePadding = 16.dp,
+        divider = {}
+    ) {
+        tabs.forEachIndexed { index, title ->
+            Tab(
+                selected = selectedTabIndex == index,
+                onClick = { onTabSelected(index) },
+                text = {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.titleSmall
+                    )
+                }
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun GradesScreen(
+    subjects: List<SubjectSummary>,
+    periods: List<AcademicPeriod> = emptyList(),
+    selectedPeriodIndex: Int = 0,
+    onSelectPeriod: (Int) -> Unit = {},
+    modifier: Modifier = Modifier
+) {
+    MarksScreen(
+        subjects = subjects,
+        periods = periods,
+        selectedPeriodIndex = selectedPeriodIndex,
+        onSelectPeriod = onSelectPeriod,
+        modifier = modifier
+    )
 }
