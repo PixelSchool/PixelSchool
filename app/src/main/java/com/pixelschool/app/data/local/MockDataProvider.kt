@@ -1,10 +1,13 @@
 package com.pixelschool.app.data.local
 
 import com.pixelschool.app.data.model.AcademicPeriod
+import com.pixelschool.app.data.model.Attachment
+import com.pixelschool.app.data.model.AttachmentType
 import com.pixelschool.app.data.model.DaySchedule
 import com.pixelschool.app.data.model.Homework
 import com.pixelschool.app.data.model.Lesson
 import com.pixelschool.app.data.model.Mark
+import com.pixelschool.app.data.model.PeriodMarks
 import com.pixelschool.app.data.model.SubjectSummary
 import com.pixelschool.app.data.model.UserSession
 
@@ -56,7 +59,11 @@ object MockDataProvider {
                         teacher = "Ковалев Д. И.",
                         topic = "Динамическое программирование",
                         homework = "Решить задачу на степы",
-                        marks = listOf(Mark(value = "5", weight = 2, date = "12.10", comment = "Практическая работа", isControl = true))
+                        marks = listOf(Mark(value = "5", weight = 2, date = "12.10", comment = "Практическая работа", isControl = true)),
+                        attachments = listOf(
+                            Attachment(title = "task_dynamic.pdf", url = "https://edu.rk.gov.ru/storage/files/task_dynamic.pdf", type = AttachmentType.FILE),
+                            Attachment(title = "informatics.msk.ru", url = "https://informatics.msk.ru", type = AttachmentType.LINK)
+                        )
                     ),
                     Lesson(
                         num = 4,
@@ -276,6 +283,13 @@ object MockDataProvider {
                     Mark("5", 2, "09.10", isControl = true),
                     Mark("5", 1, "12.10"),
                     Mark("4", 1, "14.10")
+                ),
+                finalMark = "5",
+                periodMarks = listOf(
+                    PeriodMarks("1", "1 четверть", listOf(Mark("5", 1, "02.10"), Mark("4", 1, "05.10"), Mark("5", 2, "09.10", isControl = true)), 4.75f, "5"),
+                    PeriodMarks("2", "2 четверть", listOf(Mark("5", 1, "12.11"), Mark("5", 1, "18.11"), Mark("4", 1, "25.11")), 4.67f, "5"),
+                    PeriodMarks("3", "3 четверть", listOf(Mark("4", 1, "15.01"), Mark("5", 1, "22.01")), 4.50f, null),
+                    PeriodMarks("4", "4 четверть", emptyList(), 0f, null)
                 )
             ),
             SubjectSummary(
@@ -285,6 +299,13 @@ object MockDataProvider {
                     Mark("5", 1, "03.10"),
                     Mark("5", 2, "10.10", isControl = true),
                     Mark("5", 2, "12.10", isControl = true)
+                ),
+                finalMark = "5",
+                periodMarks = listOf(
+                    PeriodMarks("1", "1 четверть", listOf(Mark("5", 1, "03.10"), Mark("5", 2, "10.10", isControl = true)), 5.00f, "5"),
+                    PeriodMarks("2", "2 четверть", listOf(Mark("5", 1, "14.11"), Mark("5", 2, "21.11", isControl = true)), 5.00f, "5"),
+                    PeriodMarks("3", "3 четверть", listOf(Mark("5", 1, "16.01")), 5.00f, null),
+                    PeriodMarks("4", "4 четверть", emptyList(), 0f, null)
                 )
             ),
             SubjectSummary(
@@ -295,6 +316,13 @@ object MockDataProvider {
                     Mark("4", 1, "06.10"),
                     Mark("5", 1, "08.10"),
                     Mark("5", 2, "15.10", isControl = true)
+                ),
+                finalMark = "5",
+                periodMarks = listOf(
+                    PeriodMarks("1", "1 четверть", listOf(Mark("5", 1, "01.10"), Mark("4", 1, "06.10"), Mark("5", 1, "08.10")), 4.67f, "5"),
+                    PeriodMarks("2", "2 четверть", listOf(Mark("5", 1, "10.11"), Mark("5", 2, "17.11", isControl = true)), 5.00f, "5"),
+                    PeriodMarks("3", "3 четверть", listOf(Mark("5", 1, "19.01")), 5.00f, null),
+                    PeriodMarks("4", "4 четверть", emptyList(), 0f, null)
                 )
             ),
             SubjectSummary(
@@ -304,6 +332,13 @@ object MockDataProvider {
                     Mark("4", 1, "03.10"),
                     Mark("4", 1, "07.10"),
                     Mark("5", 1, "10.10")
+                ),
+                finalMark = "4",
+                periodMarks = listOf(
+                    PeriodMarks("1", "1 четверть", listOf(Mark("4", 1, "03.10"), Mark("4", 1, "07.10"), Mark("5", 1, "10.10")), 4.33f, "4"),
+                    PeriodMarks("2", "2 четверть", listOf(Mark("4", 1, "12.11"), Mark("5", 1, "19.11")), 4.50f, null),
+                    PeriodMarks("3", "3 четверть", emptyList(), 0f, null),
+                    PeriodMarks("4", "4 четверть", emptyList(), 0f, null)
                 )
             ),
             SubjectSummary(
@@ -313,6 +348,13 @@ object MockDataProvider {
                     Mark("5", 1, "04.10"),
                     Mark("4", 1, "08.10"),
                     Mark("5", 1, "13.10")
+                ),
+                finalMark = "5",
+                periodMarks = listOf(
+                    PeriodMarks("1", "1 четверть", listOf(Mark("5", 1, "04.10"), Mark("4", 1, "08.10"), Mark("5", 1, "13.10")), 4.67f, "5"),
+                    PeriodMarks("2", "2 четверть", listOf(Mark("5", 1, "15.11"), Mark("5", 1, "22.11")), 5.00f, "5"),
+                    PeriodMarks("3", "3 четверть", emptyList(), 0f, null),
+                    PeriodMarks("4", "4 четверть", emptyList(), 0f, null)
                 )
             ),
             SubjectSummary(
@@ -323,6 +365,13 @@ object MockDataProvider {
                     Mark("4", 1, "07.10"),
                     Mark("5", 1, "09.10"),
                     Mark("4", 1, "12.10")
+                ),
+                finalMark = "4",
+                periodMarks = listOf(
+                    PeriodMarks("1", "1 четверть", listOf(Mark("4", 1, "02.10"), Mark("4", 1, "07.10"), Mark("5", 1, "09.10")), 4.33f, "4"),
+                    PeriodMarks("2", "2 четверть", listOf(Mark("4", 1, "11.11"), Mark("4", 1, "18.11")), 4.00f, "4"),
+                    PeriodMarks("3", "3 четверть", emptyList(), 0f, null),
+                    PeriodMarks("4", "4 четверть", emptyList(), 0f, null)
                 )
             ),
             SubjectSummary(
@@ -331,6 +380,13 @@ object MockDataProvider {
                 marks = listOf(
                     Mark("5", 1, "05.10"),
                     Mark("5", 1, "12.10")
+                ),
+                finalMark = "5",
+                periodMarks = listOf(
+                    PeriodMarks("1", "1 четверть", listOf(Mark("5", 1, "05.10"), Mark("5", 1, "12.10")), 5.00f, "5"),
+                    PeriodMarks("2", "2 четверть", listOf(Mark("5", 1, "16.11")), 5.00f, null),
+                    PeriodMarks("3", "3 четверть", emptyList(), 0f, null),
+                    PeriodMarks("4", "4 четверть", emptyList(), 0f, null)
                 )
             ),
             SubjectSummary(
@@ -341,6 +397,13 @@ object MockDataProvider {
                     Mark("4", 1, "08.10"),
                     Mark("4", 1, "13.10"),
                     Mark("5", 1, "15.10")
+                ),
+                finalMark = "5",
+                periodMarks = listOf(
+                    PeriodMarks("1", "1 четверть", listOf(Mark("5", 1, "03.10"), Mark("4", 1, "08.10"), Mark("4", 1, "13.10")), 4.33f, "4"),
+                    PeriodMarks("2", "2 четверть", listOf(Mark("5", 1, "14.11"), Mark("5", 1, "21.11")), 5.00f, "5"),
+                    PeriodMarks("3", "3 четверть", emptyList(), 0f, null),
+                    PeriodMarks("4", "4 четверть", emptyList(), 0f, null)
                 )
             )
         )

@@ -10,6 +10,16 @@ data class UserSession(
     val studentId: String = ""
 )
 
+enum class AttachmentType {
+    FILE, LINK
+}
+
+data class Attachment(
+    val title: String,
+    val url: String,
+    val type: AttachmentType
+)
+
 data class DaySchedule(
     val date: String,            // "12.10.2026"
     val dayOfWeek: String,       // "Понедельник"
@@ -27,7 +37,8 @@ data class Lesson(
     val teacher: String = "",    // "Иванова А. С."
     val topic: String? = null,
     val homework: String? = null,
-    val marks: List<Mark> = emptyList()
+    val marks: List<Mark> = emptyList(),
+    val attachments: List<Attachment> = emptyList()
 )
 
 data class Mark(
@@ -46,14 +57,24 @@ data class Homework(
     val subject: String,
     val text: String,
     val date: String,            // "13.10.2026"
-    val isCompleted: Boolean = false
+    val isCompleted: Boolean = false,
+    val attachments: List<Attachment> = emptyList()
+)
+
+data class PeriodMarks(
+    val periodId: String,        // "1", "2", "3", "4"
+    val periodName: String,      // "1 четверть", "2 четверть"
+    val marks: List<Mark> = emptyList(),
+    val average: Float = 0f,
+    val finalMark: String? = null
 )
 
 data class SubjectSummary(
     val subject: String,
     val average: Float,          // 4.67
     val marks: List<Mark> = emptyList(),
-    val finalMark: String? = null
+    val finalMark: String? = null,
+    val periodMarks: List<PeriodMarks> = emptyList()
 )
 
 data class AcademicPeriod(
@@ -64,4 +85,3 @@ data class AcademicPeriod(
     val rangeDays: String,       // "20260901-20261026"
     val isActive: Boolean = false
 )
-

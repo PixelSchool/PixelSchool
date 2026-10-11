@@ -121,14 +121,15 @@ class DiaryRepository(
         var hwCounter = 1
         for (day in schedule) {
             for (lesson in day.lessons) {
-                if (!lesson.homework.isNullOrBlank()) {
+                if (!lesson.homework.isNullOrBlank() || lesson.attachments.isNotEmpty()) {
                     hwList.add(
                         Homework(
                             id = "hw_${day.date}_${lesson.num}_${hwCounter++}",
                             subject = lesson.subject,
-                            text = lesson.homework,
+                            text = lesson.homework ?: "Материалы к уроку",
                             date = day.date,
-                            isCompleted = false
+                            isCompleted = false,
+                            attachments = lesson.attachments
                         )
                     )
                 }

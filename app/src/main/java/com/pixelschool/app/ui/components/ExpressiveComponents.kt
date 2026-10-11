@@ -31,6 +31,15 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.content.Intent
+import android.net.Uri
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material.icons.automirrored.rounded.OpenInNew
+import androidx.compose.material.icons.rounded.Description
+import androidx.compose.ui.platform.LocalContext
+import com.pixelschool.app.data.model.Attachment
+import com.pixelschool.app.data.model.AttachmentType
 import com.pixelschool.app.data.model.Homework
 import com.pixelschool.app.data.model.Lesson
 import com.pixelschool.app.ui.theme.Grade2Container
@@ -178,6 +187,20 @@ fun LessonExpressiveCard(
                 }
             }
 
+            if (lesson.attachments.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    lesson.attachments.forEach { attachment ->
+                        AttachmentChip(attachment = attachment)
+                    }
+                }
+            }
+
             if (lesson.room.isNotBlank() || lesson.teacher.isNotBlank()) {
                 Spacer(modifier = Modifier.height(8.dp))
                 Row(
@@ -200,6 +223,54 @@ fun LessonExpressiveCard(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+fun AttachmentChip(
+    attachment: Attachment,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    Surface(
+        shape = RoundedCornerShape(10.dp),
+        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f),
+        modifier = modifier
+            .clip(RoundedCornerShape(10.dp))
+            .clickable {
+                try {
+                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(attachment.url)).apply {
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                    }
+                    context.startActivity(intent)
+                } catch (_: Exception) {}
+            }
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            val icon = if (attachment.type == AttachmentType.FILE) {
+                Icons.Rounded.Description
+            } else {
+                Icons.AutoMirrored.Rounded.OpenInNew
+            }
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                modifier = Modifier.size(16.dp)
+            )
+            Text(
+                text = attachment.title,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
         }
     }
 }
@@ -270,6 +341,20 @@ fun HomeworkExpressiveCard(
                     color = if (homework.isCompleted) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.onSurfaceVariant,
                     textDecoration = if (homework.isCompleted) TextDecoration.LineThrough else TextDecoration.None
                 )
+
+                if (homework.attachments.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        homework.attachments.forEach { attachment ->
+                            AttachmentChip(attachment = attachment)
+                        }
+                    }
+                }
             }
         }
     }
