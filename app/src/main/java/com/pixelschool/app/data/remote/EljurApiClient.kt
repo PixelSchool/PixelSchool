@@ -24,6 +24,7 @@ class EljurApiClient(
 
     private val baseUrl = "https://edu.rk.gov.ru"
     private val devKey = "19c4bfc2705023fe080ce94ace26aec9"
+    private val browserUserAgent = "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Mobile Safari/537.36"
 
     private fun extractUserVendor(json: JSONObject, fallbackUserName: String?): UserSession? {
         val arr = json.optJSONArray("result")
@@ -44,7 +45,7 @@ class EljurApiClient(
     }
 
     /**
-     * Resolves user session either from v_token or directly from web session cookies
+     * Resolves user session from OAuth code/JWT, v_token, or web session cookies.
      */
     suspend fun resolveSession(
         tokenOrVToken: String?,
@@ -52,40 +53,58 @@ class EljurApiClient(
         fallbackUserName: String? = null
     ): Result<UserSession> = withContext(Dispatchers.IO) {
         try {
-            // Attempt 1: If we have v_token, exchange via /apiv3/getusersvendors
+            // Attempt 1: If we have an incoming token (JWT code, v_token, or auth token), try exchanging via getusersvendors
             if (!tokenOrVToken.isNullOrEmpty() && tokenOrVToken != "web_session") {
-                val vTokenUrl = "$baseUrl/apiv3/getusersvendors?devkey=$devKey&out_format=json&v_token=$tokenOrVToken&auth_token=true"
-                val req = Request.Builder().url(vTokenUrl).apply {
-                    if (!cookies.isNullOrEmpty()) addHeader("Cookie", cookies)
-                }.build()
+                val candidateUrls = listOf(
+                    "$baseUrl/apiv3/getusersvendors?devkey=$devKey&out_format=json&v_token=$tokenOrVToken&auth_token=true",
+                    "$baseUrl/apiv3/getusersvendors?devkey=$devKey&out_format=json&auth_token=$tokenOrVToken",
+                    "$baseUrl/apiv3/getusersvendors?devkey=$devKey&out_format=json&code=$tokenOrVToken&auth_token=true"
+                )
 
-                val resp = client.newCall(req).execute()
-                val body = resp.body?.string()
-                if (resp.isSuccessful && !body.isNullOrEmpty()) {
-                    val json = JSONObject(body)
-                    val session = extractUserVendor(json, fallbackUserName)
-                    if (session != null) return@withContext Result.success(session)
+                for (url in candidateUrls) {
+                    try {
+                        val req = Request.Builder()
+                            .url(url)
+                            .header("User-Agent", browserUserAgent)
+                            .apply {
+                                if (!cookies.isNullOrEmpty()) addHeader("Cookie", cookies)
+                                if (TokenExtractor.isJwtToken(tokenOrVToken)) addHeader("Authorization", "Bearer $tokenOrVToken")
+                            }.build()
+
+                        val resp = client.newCall(req).execute()
+                        val body = resp.body?.string()
+                        if (resp.isSuccessful && !body.isNullOrEmpty()) {
+                            val json = JSONObject(body)
+                            val session = extractUserVendor(json, fallbackUserName)
+                            if (session != null) return@withContext Result.success(session)
+                        }
+                    } catch (_: Exception) {}
                 }
 
-                // If tokenOrVToken is already a direct session token (length >= 16)
-                if (tokenOrVToken.length >= 16) {
+                // Attempt 2: If token is a JWT (OAuth code / ESIA token) or persistent token (length >= 16)
+                if (TokenExtractor.isJwtToken(tokenOrVToken) || tokenOrVToken.length >= 16) {
+                    val jwtName = TokenExtractor.extractUserTitleFromJwt(tokenOrVToken)
                     val profileResult = if (!cookies.isNullOrEmpty()) scrapeUserProfile(cookies) else "" to ""
+                    val finalName = profileResult.first.ifBlank { jwtName ?: fallbackUserName ?: "Ученик" }
+                    val finalSchool = profileResult.second.ifBlank { "ГИС РК «Образование»" }
+
                     return@withContext Result.success(
                         UserSession(
                             token = tokenOrVToken,
                             vendor = "edu",
                             login = "",
-                            userTitle = profileResult.first.ifBlank { fallbackUserName ?: "Ученик" },
-                            schoolTitle = profileResult.second.ifBlank { "ГИС РК «Образование»" }
+                            userTitle = finalName,
+                            schoolTitle = finalSchool
                         )
                     )
                 }
             }
 
-            // Attempt 2: If we have session cookies, query /apiv3/getusersvendors directly with cookies
+            // Attempt 3: If we have session cookies, query /apiv3/getusersvendors directly with cookies
             if (!cookies.isNullOrEmpty()) {
                 val cookieReq = Request.Builder()
                     .url("$baseUrl/apiv3/getusersvendors?devkey=$devKey&out_format=json&auth_token=true")
+                    .header("User-Agent", browserUserAgent)
                     .addHeader("Cookie", cookies)
                     .build()
                 val cookieResp = client.newCall(cookieReq).execute()
@@ -96,15 +115,30 @@ class EljurApiClient(
                     if (session != null) return@withContext Result.success(session)
                 }
 
-                // Attempt 3: Scrape profile info from /journal-app
+                // Attempt 4: Scrape profile info from /journal-app
                 val profileResult = scrapeUserProfile(cookies)
+                val finalName = profileResult.first.ifBlank { fallbackUserName ?: "Ученик" }
+                val finalSchool = profileResult.second.ifBlank { "ГИС РК «Образование»" }
                 return@withContext Result.success(
                     UserSession(
                         token = tokenOrVToken ?: "web_session",
                         vendor = "edu",
                         login = "",
-                        userTitle = profileResult.first.ifBlank { fallbackUserName ?: "Ученик" },
-                        schoolTitle = profileResult.second.ifBlank { "ГИС РК «Образование»" }
+                        userTitle = finalName,
+                        schoolTitle = finalSchool
+                    )
+                )
+            }
+
+            // Attempt 5: If only fallback username or token string is present
+            if (!tokenOrVToken.isNullOrEmpty()) {
+                return@withContext Result.success(
+                    UserSession(
+                        token = tokenOrVToken,
+                        vendor = "edu",
+                        login = "",
+                        userTitle = fallbackUserName ?: "Ученик",
+                        schoolTitle = "ГИС РК «Образование»"
                     )
                 )
             }
@@ -119,13 +153,14 @@ class EljurApiClient(
         return try {
             val req = Request.Builder()
                 .url("$baseUrl/journal-app")
+                .header("User-Agent", browserUserAgent)
                 .addHeader("Cookie", cookies)
                 .build()
             val resp = client.newCall(req).execute()
             val html = resp.body?.string() ?: return "" to ""
             val doc = Jsoup.parse(html)
-            val name = doc.selectFirst(".user-name, .b-dropdown__user, .header-user__name, .m-user__name")?.text()?.trim() ?: ""
-            val school = doc.selectFirst(".school-title, .header-school__title, .m-logo__subtitle")?.text()?.trim() ?: "Республика Крым"
+            val name = doc.selectFirst(".user-name, .b-dropdown__user, .header-user__name, .m-user__name, .user_name, .user-profile__name")?.text()?.trim() ?: ""
+            val school = doc.selectFirst(".school-title, .header-school__title, .m-logo__subtitle, .school_title")?.text()?.trim() ?: "Республика Крым"
             name to school
         } catch (_: Exception) {
             "" to ""
@@ -144,9 +179,14 @@ class EljurApiClient(
                 // rejects vendor=edu with "не удалось авторизовать разработчика" (it expects specific school code or no vendor)
                 val vendorParam = if (vendor.isNotBlank() && vendor != "edu") "&vendor=$vendor" else ""
                 val url = "$baseUrl/apiv3/getdiary?devkey=$devKey&auth_token=$token$vendorParam&out_format=json&rings=yes"
-                val reqBuilder = Request.Builder().url(url)
+                val reqBuilder = Request.Builder()
+                    .url(url)
+                    .header("User-Agent", browserUserAgent)
                 if (!cookies.isNullOrEmpty()) {
                     reqBuilder.addHeader("Cookie", cookies)
+                }
+                if (TokenExtractor.isJwtToken(token)) {
+                    reqBuilder.addHeader("Authorization", "Bearer $token")
                 }
                 val response = client.newCall(reqBuilder.build()).execute()
                 val body = response.body?.string()
@@ -260,64 +300,79 @@ class EljurApiClient(
 
     fun fetchDiaryFromWeb(cookies: String): Result<List<DaySchedule>> {
         return try {
-            val request = Request.Builder()
-                .url("$baseUrl/journal-app/week.0")
-                .addHeader("Cookie", cookies)
-                .build()
-            val response = client.newCall(request).execute()
-            val html = response.body?.string() ?: return Result.failure(Exception("Пустая HTML страница"))
-            val doc = Jsoup.parse(html)
-            val dayElements = doc.select("div.dnevnik-day, div.m-journal__day, div.journal-day, div.day-card")
+            val candidateUrls = listOf(
+                "$baseUrl/journal-app/week.0",
+                "$baseUrl/journal-app",
+                "$baseUrl/journal-student"
+            )
 
-            val list = mutableListOf<DaySchedule>()
-            for (dayElem in dayElements) {
-                val titleElem = dayElem.selectFirst("div.dnevnik-day__title, .day-title, .m-journal__day-header") ?: continue
-                val parts = titleElem.text().split(", ")
-                val dayOfWeek = parts.getOrNull(0) ?: ""
-                val date = parts.getOrNull(1) ?: parts.getOrNull(0) ?: ""
+            for (targetUrl in candidateUrls) {
+                val request = Request.Builder()
+                    .url(targetUrl)
+                    .header("User-Agent", browserUserAgent)
+                    .addHeader("Cookie", cookies)
+                    .build()
+                val response = client.newCall(request).execute()
+                val html = response.body?.string() ?: continue
+                val doc = Jsoup.parse(html)
+                val dayElements = doc.select("div.dnevnik-day, div.m-journal__day, div.journal-day, div.day-card, div.dnevnik__day")
+                if (dayElements.isEmpty()) continue
 
-                val lessons = mutableListOf<Lesson>()
-                val lessonElems = dayElem.select("div.dnevnik-lesson, div.m-journal__lesson, div.lesson-item, tr.lesson-row, div.journal-lesson")
-                for (lElem in lessonElems) {
-                    val num = lElem.selectFirst(".dnevnik-lesson__number, .lesson-number, .num")?.text()?.replace(".", "")?.trim()?.toIntOrNull() ?: 1
-                    val time = lElem.selectFirst(".dnevnik-lesson__time, .lesson-time, .time")?.text()?.trim() ?: ""
-                    val subject = lElem.selectFirst(".js-rt_licey-dnevnik-subject, .lesson-subject, .subject-title, .dnevnik-lesson__name, span.subject")?.text()?.trim() ?: "Урок"
-                    val task = lElem.selectFirst(".dnevnik-lesson__task, .lesson-task, .homework-text, .task-description")?.text()?.trim()
-                    val markVal = lElem.selectFirst(".dnevnik-mark, .mark-badge, .grade, .lesson-mark")?.text()?.trim()
+                val list = mutableListOf<DaySchedule>()
+                for (dayElem in dayElements) {
+                    val titleElem = dayElem.selectFirst("div.dnevnik-day__title, .day-title, .m-journal__day-header, .dnevnik__day-title") ?: continue
+                    val parts = titleElem.text().split(", ")
+                    val dayOfWeek = parts.getOrNull(0) ?: ""
+                    val date = parts.getOrNull(1) ?: parts.getOrNull(0) ?: ""
 
-                    val marks = if (!markVal.isNullOrEmpty()) listOf(Mark(value = markVal)) else emptyList()
+                    val lessons = mutableListOf<Lesson>()
+                    val lessonElems = dayElem.select("div.dnevnik-lesson, div.m-journal__lesson, div.lesson-item, tr.lesson-row, div.journal-lesson, div.dnevnik__lesson")
+                    for (lElem in lessonElems) {
+                        val num = lElem.selectFirst(".dnevnik-lesson__number, .lesson-number, .num")?.text()?.replace(".", "")?.trim()?.toIntOrNull() ?: 1
+                        val time = lElem.selectFirst(".dnevnik-lesson__time, .lesson-time, .time")?.text()?.trim() ?: ""
+                        val subject = lElem.selectFirst(".js-rt_licey-dnevnik-subject, .lesson-subject, .subject-title, .dnevnik-lesson__name, span.subject")?.text()?.trim() ?: "Урок"
+                        val task = lElem.selectFirst(".dnevnik-lesson__task, .lesson-task, .homework-text, .task-description")?.text()?.trim()
+                        val markVal = lElem.selectFirst(".dnevnik-mark, .mark-badge, .grade, .lesson-mark")?.text()?.trim()
 
-                    val (startTime, endTime) = if (time.contains("-")) {
-                        val times = time.split("-")
-                        times[0].trim() to times.getOrElse(1) { "" }.trim()
-                    } else {
-                        time to ""
+                        val marks = if (!markVal.isNullOrEmpty()) listOf(Mark(value = markVal)) else emptyList()
+
+                        val (startTime, endTime) = if (time.contains("-")) {
+                            val times = time.split("-")
+                            times[0].trim() to times.getOrElse(1) { "" }.trim()
+                        } else {
+                            time to ""
+                        }
+
+                        lessons.add(
+                            Lesson(
+                                num = num,
+                                startTime = startTime,
+                                endTime = endTime,
+                                subject = subject,
+                                room = "",
+                                teacher = "",
+                                topic = null,
+                                homework = task,
+                                marks = marks
+                            )
+                        )
                     }
 
-                    lessons.add(
-                        Lesson(
-                            num = num,
-                            startTime = startTime,
-                            endTime = endTime,
-                            subject = subject,
-                            room = "",
-                            teacher = "",
-                            topic = null,
-                            homework = task,
-                            marks = marks
+                    list.add(
+                        DaySchedule(
+                            date = date,
+                            dayOfWeek = dayOfWeek,
+                            lessons = lessons
                         )
                     )
                 }
 
-                list.add(
-                    DaySchedule(
-                        date = date,
-                        dayOfWeek = dayOfWeek,
-                        lessons = lessons
-                    )
-                )
+                if (list.isNotEmpty()) {
+                    return Result.success(list)
+                }
             }
-            Result.success(list)
+
+            Result.failure(Exception("Пустая HTML страница дневника"))
         } catch (e: Exception) {
             Result.failure(e)
         }
