@@ -162,14 +162,21 @@ fun MainAppScreen(
                             selectedDayIndex = selectedDayIndex,
                             onSelectDay = { viewModel.selectDay(it) },
                             weekOffset = currentWeekOffset,
-                            onChangeWeekOffset = { viewModel.changeWeekOffset(it) }
+                            onChangeWeekOffset = { viewModel.changeWeekOffset(it) },
+                            onResetWeekOffset = { viewModel.resetWeekOffset() }
                         )
                     }
                     Screen.Homework -> {
                         val homework by viewModel.homework.collectAsState()
+                        val schedule by viewModel.schedule.collectAsState()
+                        val currentWeekOffset by viewModel.currentWeekOffset.collectAsState()
                         HomeworkScreen(
                             homeworkList = homework,
-                            onToggleCompleted = { viewModel.toggleHomework(it) }
+                            onToggleCompleted = { viewModel.toggleHomework(it) },
+                            weekOffset = currentWeekOffset,
+                            onChangeWeekOffset = { viewModel.changeWeekOffset(it) },
+                            onResetWeekOffset = { viewModel.resetWeekOffset() },
+                            schedule = schedule
                         )
                     }
                     Screen.Marks -> {

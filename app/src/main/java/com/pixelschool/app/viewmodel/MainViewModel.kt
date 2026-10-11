@@ -10,6 +10,7 @@ import com.pixelschool.app.data.model.UserSession
 import com.pixelschool.app.data.remote.AuthCredentials
 import com.pixelschool.app.data.remote.SessionExpiredException
 import com.pixelschool.app.data.repository.DiaryRepository
+import com.pixelschool.app.ui.screens.HomeworkDateUtils
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -30,10 +31,10 @@ class MainViewModel(
     private val _schedule = MutableStateFlow<List<DaySchedule>>(emptyList())
     val schedule: StateFlow<List<DaySchedule>> = _schedule.asStateFlow()
 
-    private val _selectedDayIndex = MutableStateFlow(0)
+    private val _selectedDayIndex = MutableStateFlow(HomeworkDateUtils.calculateDefaultDayIndex())
     val selectedDayIndex: StateFlow<Int> = _selectedDayIndex.asStateFlow()
 
-    private val _currentWeekOffset = MutableStateFlow(0)
+    private val _currentWeekOffset = MutableStateFlow(HomeworkDateUtils.calculateDefaultWeekOffset())
     val currentWeekOffset: StateFlow<Int> = _currentWeekOffset.asStateFlow()
 
     private val _homework = MutableStateFlow<List<Homework>>(emptyList())
@@ -123,8 +124,20 @@ class MainViewModel(
 
     fun changeWeekOffset(offsetDelta: Int) {
         val newOffset = _currentWeekOffset.value + offsetDelta
+        setWeekOffset(newOffset)
+    }
+
+    fun resetWeekOffset() {
+        val defaultOffset = HomeworkDateUtils.calculateDefaultWeekOffset()
+        val defaultDay = HomeworkDateUtils.calculateDefaultDayIndex()
+        _selectedDayIndex.value = defaultDay
+        if (_currentWeekOffset.value != defaultOffset) {
+            setWeekOffset(defaultOffset)
+        }
+    }
+
+    fun setWeekOffset(newOffset: Int) {
         _currentWeekOffset.value = newOffset
-        _selectedDayIndex.value = 0
         viewModelScope.launch {
             val curSession = session.value ?: return@launch
             _isLoading.value = true
@@ -142,7 +155,7 @@ class MainViewModel(
                     _schedule.value = emptyList()
                     _homework.value = emptyList()
                 }
-                _errorMessage.value = e.message ?: "Не удалось загрузить расписание"
+                _errorMessage.value = e.message ?: "Не удалось загрузить данные"
             } finally {
                 _isLoading.value = false
             }
@@ -212,6 +225,7 @@ class MainViewModel(
         _homework.value = emptyList()
         _marks.value = emptyList()
         _periods.value = emptyList()
-        _currentWeekOffset.value = 0
+        _currentWeekOffset.value = HomeworkDateUtils.calculateDefaultWeekOffset()
+        _selectedDayIndex.value = HomeworkDateUtils.calculateDefaultDayIndex()
     }
 }
