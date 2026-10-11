@@ -33,10 +33,33 @@ android {
             } else {
                 // CI / Local fallback: sign with debug keystore to guarantee a valid signed release APK
                 val debugConfig = getByName("debug")
-                storeFile = debugConfig.storeFile
-                storePassword = debugConfig.storePassword
-                keyAlias = debugConfig.keyAlias
-                keyPassword = debugConfig.keyPassword
+                val fallbackKeystore = debugConfig.storeFile ?: file("${System.getProperty("user.home")}/.android/debug.keystore")
+                if (!fallbackKeystore.exists()) {
+                    fallbackKeystore.parentFile?.mkdirs()
+                    try {
+                        val isWindows = System.getProperty("os.name").lowercase().contains("windows")
+                        val keytoolCmd = if (isWindows) "keytool.exe" else "keytool"
+                        val keytoolPath = File(System.getProperty("java.home"), "bin/$keytoolCmd").takeIf { it.exists() }?.absolutePath ?: "keytool"
+                        ProcessBuilder(
+                            keytoolPath,
+                            "-genkeypair",
+                            "-keystore", fallbackKeystore.absolutePath,
+                            "-storepass", "android",
+                            "-alias", "androiddebugkey",
+                            "-keypass", "android",
+                            "-keyalg", "RSA",
+                            "-keysize", "2048",
+                            "-validity", "10000",
+                            "-dname", "CN=Android Debug,O=Android,C=US"
+                        ).start().waitFor()
+                    } catch (e: Exception) {
+                        logger.warn("Could not generate fallback keystore: ${e.message}")
+                    }
+                }
+                storeFile = fallbackKeystore
+                storePassword = debugConfig.storePassword ?: "android"
+                keyAlias = debugConfig.keyAlias ?: "androiddebugkey"
+                keyPassword = debugConfig.keyPassword ?: "android"
                 enableV1Signing = true
                 enableV2Signing = true
                 enableV3Signing = true
