@@ -52,16 +52,8 @@ class EljurApiClient(
     }
 
     fun getBaseUrls(vendor: String = "edu"): List<String> {
-        val list = mutableListOf<String>()
-        // 1. Regional Crimean portal
-        list.add("https://edu.rk.gov.ru")
-        // 2. Direct school or regional subdomain
-        if (vendor.isNotBlank()) {
-            list.add("https://$vendor.eljur.ru")
-        }
-        // 3. Central multi-tenant ElJur API gateway
-        list.add("https://api.eljur.ru")
-        return list.distinct()
+        // Exclusively regional gateway: eliminate non-existent api.eljur.ru to avoid DNS UnknownHostException
+        return listOf("https://edu.rk.gov.ru")
     }
 
 
@@ -644,11 +636,15 @@ class EljurApiClient(
                             "$base/apiv3/getdiary?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam&days=$targetDays&rings=1",
                             "$base/apiv3/getdiary?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam&days=$targetDays&rings=true",
                             "$base/apiv3/getdiary?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam&days=$targetDays",
+                            "$base/api/getdiary?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam&days=$targetDays&rings=1",
+                            "$base/api/getdiary?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam&days=$targetDays",
                             "$base/apiv3/getdials?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam&days=$targetDays&rings=1",
                             "$base/apiv3/getdials?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam&days=$targetDays",
                             "$base/apiv3/getschedule?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam&days=$targetDays&rings=1",
                             "$base/apiv3/getschedule?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam&days=$targetDays&rings=true",
-                            "$base/apiv3/getschedule?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam&rings=1"
+                            "$base/api/getschedule?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam&days=$targetDays&rings=1",
+                            "$base/eljur/apiv3/getdiary?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam&days=$targetDays&rings=1",
+                            "$base/journal/apiv3/getdiary?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam&days=$targetDays&rings=1"
                         )
 
                         for (url in candidateUrls) {
@@ -772,33 +768,40 @@ class EljurApiClient(
                         val candParam = if (cand != null) "&student=$cand" else ""
                         for (range in targetRanges) {
                             val daysParam = if (range != null) "&days=$range" else ""
-                            val url = "$base/apiv3/getmarks?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam$daysParam"
-                            try {
-                                val req = buildRequest(url, cookies)
-                                val response = client.newCall(req).execute()
-                                val body = response.body?.string()
+                            val candidateMarkUrls = listOf(
+                                "$base/apiv3/getmarks?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam$daysParam",
+                                "$base/api/getmarks?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam$daysParam",
+                                "$base/eljur/apiv3/getmarks?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam$daysParam",
+                                "$base/journal/apiv3/getmarks?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam$daysParam"
+                            )
+                            for (url in candidateMarkUrls) {
+                                try {
+                                    val req = buildRequest(url, cookies)
+                                    val response = client.newCall(req).execute()
+                                    val body = response.body?.string()
 
-                                if (response.isSuccessful && !body.isNullOrEmpty()) {
-                                    val json = JSONObject(body)
-                                    val respObj = json.optJSONObject("response") ?: json
-                                    if (respObj.optInt("state", 200) == 200) {
-                                        val marks = parseApiMarks(respObj, cand ?: studentId)
-                                        if (marks.isNotEmpty()) {
-                                            // Merge final marks from getfinalassessments if available
-                                            val enrichedMarks = if (finalMarksMap.isNotEmpty()) {
-                                                marks.map { subj ->
-                                                    val fm = subj.finalMark ?: finalMarksMap[subj.subject]
-                                                    subj.copy(finalMark = fm)
-                                                }
-                                            } else marks
+                                    if (response.isSuccessful && !body.isNullOrEmpty()) {
+                                        val json = JSONObject(body)
+                                        val respObj = json.optJSONObject("response") ?: json
+                                        if (respObj.optInt("state", 200) == 200) {
+                                            val marks = parseApiMarks(respObj, cand ?: studentId)
+                                            if (marks.isNotEmpty()) {
+                                                // Merge final marks from getfinalassessments if available
+                                                val enrichedMarks = if (finalMarksMap.isNotEmpty()) {
+                                                    marks.map { subj ->
+                                                        val fm = subj.finalMark ?: finalMarksMap[subj.subject]
+                                                        subj.copy(finalMark = fm)
+                                                    }
+                                                } else marks
 
-                                            Log.d("EljurApiClient", "Successfully fetched ${enrichedMarks.size} subjects from $url")
-                                            return@withContext Result.success(enrichedMarks)
+                                                Log.d("EljurApiClient", "Successfully fetched ${enrichedMarks.size} subjects from $url")
+                                                return@withContext Result.success(enrichedMarks)
+                                            }
                                         }
                                     }
+                                } catch (e: Exception) {
+                                    Log.w("EljurApiClient", "Marks API candidate failed: ${e.message} for $url")
                                 }
-                            } catch (e: Exception) {
-                                Log.w("EljurApiClient", "Marks API candidate failed: ${e.message} for $url")
                             }
                         }
                     }

@@ -405,8 +405,8 @@ fun GosuslugiAuthDialog(
                                 }
                             }
 
-                            // Official flow=v2 used by ru.eljur.region with full Chrome headers
-                            loadUrl("https://edu.rk.gov.ru/journal-esia-region-action?flow=v2", chromeHeaders)
+                            // Regional entrypoint for ESIA authorization on Crimean portal
+                            loadUrl("https://edu.rk.gov.ru/authorize", chromeHeaders)
                         }
                     },
                     modifier = Modifier.fillMaxSize()
