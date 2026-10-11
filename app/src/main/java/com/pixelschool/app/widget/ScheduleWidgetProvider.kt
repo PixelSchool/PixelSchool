@@ -15,7 +15,6 @@ import com.pixelschool.app.data.local.CacheStore
 import com.pixelschool.app.data.model.DaySchedule
 import java.text.SimpleDateFormat
 import java.util.Calendar
-import java.util.Date
 import java.util.Locale
 
 class ScheduleWidgetProvider : AppWidgetProvider() {
@@ -35,14 +34,7 @@ class ScheduleWidgetProvider : AppWidgetProvider() {
         if (scheduleList.isEmpty()) return
 
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val todayDateFormat = SimpleDateFormat("dd.MM.yyyy", Locale.getDefault())
-        val todayStr = todayDateFormat.format(Date())
-        val todayDayOfWeekFormat = SimpleDateFormat("EEEE", Locale("ru"))
-        val todayDayOfWeek = todayDayOfWeekFormat.format(Date()).replaceFirstChar { it.uppercase() }
-
-        val todayIndex = scheduleList.indexOfFirst { it.date == todayStr }.takeIf { it >= 0 }
-            ?: scheduleList.indexOfFirst { it.dayOfWeek.equals(todayDayOfWeek, ignoreCase = true) }.takeIf { it >= 0 }
-            ?: 0
+        val todayIndex = getTodayIndex(context, scheduleList)
 
         var currentIndex = prefs.getInt("${KEY_DAY_INDEX}_$appWidgetId", todayIndex)
         if (currentIndex !in scheduleList.indices) currentIndex = todayIndex
@@ -85,90 +77,47 @@ class ScheduleWidgetProvider : AppWidgetProvider() {
             val currentWeek = cacheStore.getScheduleCache(0) ?: emptyList()
             val nextWeek = cacheStore.getScheduleCache(-1) ?: emptyList()
 
-            if (currentWeek.isEmpty() && nextWeek.isEmpty()) {
-                return emptyList()
-            }
+            // Filter out weekends and days without lessons
+            val filteredCurrent = currentWeek.filter { it.lessons.any { l -> l.subject.isNotBlank() } }
+            val filteredNext = nextWeek.filter { it.lessons.any { l -> l.subject.isNotBlank() } }
 
-            val normalizedCurrent = normalizeWeek(currentWeek)
-            val normalizedNext = if (nextWeek.isNotEmpty()) {
-                normalizeWeek(nextWeek)
-            } else {
-                generateNextWeekPlaceholder(normalizedCurrent)
-            }
-
-            return normalizedCurrent + normalizedNext
+            return filteredCurrent + filteredNext
         }
 
-        private fun normalizeWeek(weekList: List<DaySchedule>): List<DaySchedule> {
-            if (weekList.isEmpty()) return emptyList()
-            val result = weekList.toMutableList()
-            val sdf = SimpleDateFormat("dd.MM.yyyy", Locale.getDefault())
+        fun getTodayIndex(context: Context, scheduleList: List<DaySchedule>): Int {
+            if (scheduleList.isEmpty()) return 0
 
-            val hasSaturday = result.any { it.dayOfWeek.equals("Суббота", ignoreCase = true) }
-            val hasSunday = result.any { it.dayOfWeek.equals("Воскресенье", ignoreCase = true) }
+            val cacheStore = CacheStore(context)
+            val currentWeekCount = (cacheStore.getScheduleCache(0) ?: emptyList())
+                .count { it.lessons.any { l -> l.subject.isNotBlank() } }
 
-            if (!hasSaturday || !hasSunday) {
-                val lastDay = result.lastOrNull()
-                val lastDate = lastDay?.date?.let { try { sdf.parse(it) } catch (_: Exception) { null } }
-                val cal = Calendar.getInstance()
-                if (lastDate != null) {
-                    cal.time = lastDate
-                }
+            val cal = Calendar.getInstance()
+            val isSunday = cal.get(Calendar.DAY_OF_WEEK) == Calendar.SUNDAY
+            val isSaturday = cal.get(Calendar.DAY_OF_WEEK) == Calendar.SATURDAY
+            val todayDateFormat = SimpleDateFormat("dd.MM.yyyy", Locale.getDefault())
+            val todayStr = todayDateFormat.format(cal.time)
+            val todayDayOfWeekFormat = SimpleDateFormat("EEEE", Locale("ru"))
+            val todayDayOfWeek = todayDayOfWeekFormat.format(cal.time).replaceFirstChar { it.uppercase() }
 
-                if (!hasSaturday) {
-                    cal.add(Calendar.DAY_OF_MONTH, 1)
-                    result.add(
-                        DaySchedule(
-                            date = sdf.format(cal.time),
-                            dayOfWeek = "Суббота",
-                            isHoliday = true,
-                            holidayName = "Выходной день",
-                            lessons = emptyList()
-                        )
-                    )
-                }
-                if (!hasSunday) {
-                    cal.add(Calendar.DAY_OF_MONTH, 1)
-                    result.add(
-                        DaySchedule(
-                            date = sdf.format(cal.time),
-                            dayOfWeek = "Воскресенье",
-                            isHoliday = true,
-                            holidayName = "Выходной день",
-                            lessons = emptyList()
-                        )
-                    )
-                }
+            val hasSaturdayLessons = scheduleList.any { it.dayOfWeek.equals("Суббота", ignoreCase = true) }
+            val isWeekend = isSunday || todayDayOfWeek.equals("Воскресенье", ignoreCase = true) ||
+                    ((isSaturday || todayDayOfWeek.equals("Суббота", ignoreCase = true)) && !hasSaturdayLessons)
+
+            if (isWeekend) {
+                val daysToMonday = if (isSunday || todayDayOfWeek.equals("Воскресенье", ignoreCase = true)) 1 else 2
+                val nextMondayCal = Calendar.getInstance().apply { add(Calendar.DAY_OF_MONTH, daysToMonday) }
+                val nextMondayStr = todayDateFormat.format(nextMondayCal.time)
+
+                val byDate = scheduleList.indexOfFirst { it.date == nextMondayStr }.takeIf { it >= 0 }
+                val byNextWeek = if (currentWeekCount in scheduleList.indices) currentWeekCount else null
+                val byMonday = scheduleList.indexOfFirst { it.dayOfWeek.equals("Понедельник", ignoreCase = true) }.takeIf { it >= 0 }
+
+                return byDate ?: byNextWeek ?: byMonday ?: 0
             }
-            return result
-        }
 
-        private fun generateNextWeekPlaceholder(currentWeek: List<DaySchedule>): List<DaySchedule> {
-            if (currentWeek.isEmpty()) return emptyList()
-            val sdf = SimpleDateFormat("dd.MM.yyyy", Locale.getDefault())
-            return currentWeek.map { day ->
-                val nextDateStr = try {
-                    val d = sdf.parse(day.date)
-                    if (d != null) {
-                        val cal = Calendar.getInstance().apply {
-                            time = d
-                            add(Calendar.DAY_OF_MONTH, 7)
-                        }
-                        sdf.format(cal.time)
-                    } else ""
-                } catch (_: Exception) {
-                    ""
-                }
-                val isWeekend = day.dayOfWeek.equals("Суббота", ignoreCase = true) ||
-                                day.dayOfWeek.equals("Воскресенье", ignoreCase = true)
-                DaySchedule(
-                    date = nextDateStr,
-                    dayOfWeek = day.dayOfWeek,
-                    isHoliday = isWeekend,
-                    holidayName = if (isWeekend) "Выходной день" else null,
-                    lessons = emptyList()
-                )
-            }
+            val byDate = scheduleList.indexOfFirst { it.date == todayStr }.takeIf { it >= 0 }
+            val byDayOfWeek = scheduleList.indexOfFirst { it.dayOfWeek.equals(todayDayOfWeek, ignoreCase = true) }.takeIf { it >= 0 }
+            return byDate ?: byDayOfWeek ?: 0
         }
 
         fun updateAllWidgets(context: Context) {
@@ -191,17 +140,22 @@ class ScheduleWidgetProvider : AppWidgetProvider() {
             val views = RemoteViews(context.packageName, R.layout.widget_schedule)
 
             val scheduleList = getCombinedSchedule(context)
+            val cacheStore = CacheStore(context)
+            val currentWeekCount = (cacheStore.getScheduleCache(0) ?: emptyList())
+                .count { it.lessons.any { l -> l.subject.isNotBlank() } }
 
             val todayDateFormat = SimpleDateFormat("dd.MM.yyyy", Locale.getDefault())
-            val todayStr = todayDateFormat.format(Date())
-
+            val cal = Calendar.getInstance()
+            val todayStr = todayDateFormat.format(cal.time)
             val todayDayOfWeekFormat = SimpleDateFormat("EEEE", Locale("ru"))
-            val todayDayOfWeek = todayDayOfWeekFormat.format(Date()).replaceFirstChar { it.uppercase() }
+            val todayDayOfWeek = todayDayOfWeekFormat.format(cal.time).replaceFirstChar { it.uppercase() }
+            val isSunday = cal.get(Calendar.DAY_OF_WEEK) == Calendar.SUNDAY
+            val isSaturday = cal.get(Calendar.DAY_OF_WEEK) == Calendar.SATURDAY
+            val hasSaturdayLessons = scheduleList.any { it.dayOfWeek.equals("Суббота", ignoreCase = true) }
+            val isWeekend = isSunday || todayDayOfWeek.equals("Воскресенье", ignoreCase = true) ||
+                    ((isSaturday || todayDayOfWeek.equals("Суббота", ignoreCase = true)) && !hasSaturdayLessons)
 
-            val todayIndex = scheduleList.indexOfFirst { it.date == todayStr }.takeIf { it >= 0 }
-                ?: scheduleList.indexOfFirst { it.dayOfWeek.equals(todayDayOfWeek, ignoreCase = true) }.takeIf { it >= 0 }
-                ?: 0
-
+            val todayIndex = getTodayIndex(context, scheduleList)
             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             val currentIndex = prefs.getInt("${KEY_DAY_INDEX}_$appWidgetId", todayIndex)
 
@@ -214,9 +168,13 @@ class ScheduleWidgetProvider : AppWidgetProvider() {
             val lessons = currentSchedule?.lessons?.filter { it.subject.isNotBlank() } ?: emptyList()
 
             // Header info
-            val isNextWeek = currentIndex >= 7
-            val isToday = currentSchedule?.date == todayStr || (!isNextWeek && currentSchedule?.dayOfWeek.equals(todayDayOfWeek, ignoreCase = true))
-            val isTomorrow = scheduleList.isNotEmpty() && currentIndex == todayIndex + 1
+            val isNextWeek = currentIndex >= currentWeekCount
+            val isToday = !isWeekend && (currentSchedule?.date == todayStr || (!isNextWeek && currentSchedule?.dayOfWeek.equals(todayDayOfWeek, ignoreCase = true)))
+            val isTomorrow = if (isWeekend && (isSunday || todayDayOfWeek.equals("Воскресенье", ignoreCase = true))) {
+                currentIndex == todayIndex
+            } else {
+                scheduleList.isNotEmpty() && currentIndex == todayIndex + 1
+            }
 
             val dayTitle = when {
                 isToday -> "Сегодня"
@@ -228,13 +186,10 @@ class ScheduleWidgetProvider : AppWidgetProvider() {
             val formattedDate = currentSchedule?.date?.let { formatWidgetDate(it) } ?: ""
             views.setTextViewText(R.id.widget_header_date, formattedDate)
 
-            val isWeekendOrHoliday = currentSchedule?.isHoliday == true || lessons.isEmpty()
             val badgeText = when {
                 scheduleList.isEmpty() -> "PixelSchool"
-                isNextWeek && isWeekendOrHoliday -> "След. нед. • Выходной"
                 isNextWeek && lessons.isNotEmpty() -> "След. нед. • ${lessons.size} ${getLessonWord(lessons.size)}"
                 isNextWeek -> "След. неделя"
-                isWeekendOrHoliday -> "Выходной"
                 lessons.isNotEmpty() -> "${lessons.size} ${getLessonWord(lessons.size)}"
                 else -> "PixelSchool"
             }
@@ -277,24 +232,11 @@ class ScheduleWidgetProvider : AppWidgetProvider() {
             )
             views.setOnClickPendingIntent(R.id.widget_header_center, todayPendingIntent)
 
-            // Empty state / Weekend state
+            // Empty state setup (only when no schedule is synced)
             if (scheduleList.isEmpty()) {
                 views.setTextViewText(R.id.widget_empty_icon, "📅")
                 views.setTextViewText(R.id.widget_empty_title, "Дневник не синхронизирован")
-                views.setTextViewText(R.id.widget_empty_subtitle, "Откройте приложение для загрузки расписания")
-                views.setViewVisibility(R.id.widget_empty, View.VISIBLE)
-                views.setViewVisibility(R.id.widget_lessons_list, View.GONE)
-            } else if (lessons.isEmpty()) {
-                val isHolidayDay = currentSchedule?.isHoliday == true ||
-                        currentSchedule?.dayOfWeek in listOf("Суббота", "Воскресенье")
-                val title = if (isHolidayDay) {
-                    currentSchedule?.holidayName?.ifBlank { null } ?: "Выходной день"
-                } else {
-                    "В этот день уроков нет"
-                }
-                views.setTextViewText(R.id.widget_empty_icon, if (isHolidayDay) "🌴" else "🎉")
-                views.setTextViewText(R.id.widget_empty_title, title)
-                views.setTextViewText(R.id.widget_empty_subtitle, "Можно отдохнуть и набраться сил перед учёбой")
+                views.setTextViewText(R.id.widget_empty_subtitle, "Откройте приложение для первой загрузки")
                 views.setViewVisibility(R.id.widget_empty, View.VISIBLE)
                 views.setViewVisibility(R.id.widget_lessons_list, View.GONE)
             } else {
