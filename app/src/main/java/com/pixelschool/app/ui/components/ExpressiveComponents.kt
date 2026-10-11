@@ -102,10 +102,10 @@ fun LessonExpressiveCard(
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertAlignment,
+                verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Row(verticalAlignment = Alignment.CenterVertAlignment) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Surface(
                         shape = RoundedCornerShape(8.dp),
                         color = MaterialTheme.colorScheme.primaryContainer
@@ -164,7 +164,7 @@ fun LessonExpressiveCard(
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertAlignment
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
                             text = "ДЗ: ",
@@ -246,7 +246,7 @@ fun HomeworkExpressiveCard(
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertAlignment
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
                         text = homework.subject,

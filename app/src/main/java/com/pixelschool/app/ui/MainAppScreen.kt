@@ -99,8 +99,8 @@ fun MainAppScreen(
             },
             bottomBar = {
                 NavigationBar(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainer,
-                    shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
+                    modifier = Modifier.clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)),
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer
                 ) {
                     navItems.forEach { screen ->
                         val selected = currentScreen == screen

@@ -101,7 +101,7 @@ fun HomeworkScreen(
             ) {
                 Row(
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertAlignment
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.CalendarToday,
@@ -129,7 +129,7 @@ fun HomeworkScreen(
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertAlignment
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
                             text = date.take(5), // e.g. "13.10"
@@ -169,7 +169,7 @@ fun HomeworkScreen(
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertAlignment
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
                         text = if (selectedDate == null) "Прогресс всех заданий" else "Задания на $selectedDate",

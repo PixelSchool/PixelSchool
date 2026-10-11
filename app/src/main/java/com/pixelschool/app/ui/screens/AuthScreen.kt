@@ -1,6 +1,8 @@
 package com.pixelschool.app.ui.screens
 
 import android.annotation.SuppressLint
+import android.graphics.Bitmap
+import android.net.Uri
 import android.webkit.CookieManager
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
@@ -198,7 +200,7 @@ fun GosuslugiAuthDialog(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 12.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertAlignment,
+                    verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     IconButton(onClick = onDismiss) {
@@ -231,62 +233,91 @@ fun GosuslugiAuthDialog(
                             webViewRef = this
                             settings.javaScriptEnabled = true
                             settings.domStorageEnabled = true
-                            settings.databaseEnabled = true
-                            settings.userAgentString = "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36"
+
+                            // Strip Android WebView markers so Gosuslugi / ElJur treat it as standard browser
+                            val currentUa = settings.userAgentString
+                            settings.userAgentString = currentUa
+                                .replace(Regex("(Version.*\\s)Chrome"), "Chrome")
+                                .replace(Regex(";\\s+wv"), "")
 
                             val cookieManager = CookieManager.getInstance()
                             cookieManager.setAcceptCookie(true)
                             cookieManager.setAcceptThirdPartyCookies(this, true)
 
+                            var hasCaptured = false
+
                             fun checkAndCapture(url: String?) {
-                                if (url == null) return
+                                if (url == null || hasCaptured) return
 
-                                val isTargetDiary = url.contains("/journal-app") ||
-                                        url.contains("/journal-student") ||
-                                        url.contains("/journal-") ||
-                                        (url.contains("edu.rk.gov.ru") && !url.contains("/authorize") && !url.contains("/journal-esia-action") && !url.contains("esia.gosuslugi.ru"))
+                                try {
+                                    val uri = Uri.parse(url)
+                                    val tokenParam = uri.getQueryParameter("token")
+                                    val vTokenParam = uri.getQueryParameter("v_token")
+                                    val vendorParam = uri.getQueryParameter("vendor")
+                                    val loginParam = uri.getQueryParameter("login")
 
-                                val hasVToken = url.contains("v_token=")
-
-                                if (isTargetDiary || hasVToken) {
-                                    val vToken = if (hasVToken) url.substringAfter("v_token=").substringBefore("&") else null
-                                    val cookies = cookieManager.getCookie("https://edu.rk.gov.ru")
-
-                                    // Extract any token or user name from page JS
-                                    evaluateJavascript(
-                                        """
-                                        (function() {
-                                            var t = '';
-                                            try {
-                                                t = localStorage.getItem('token') || localStorage.getItem('auth_token') || sessionStorage.getItem('token') || '';
-                                            } catch(e) {}
-                                            var u = '';
-                                            try {
-                                                var el = document.querySelector('.user-name, .b-dropdown__user, .header-user__name, .m-user__name');
-                                                if (el) u = el.innerText.trim();
-                                            } catch(e) {}
-                                            return JSON.stringify({ token: t, user: u });
-                                        })()
-                                        """.trimIndent()
-                                    ) { jsResult ->
-                                        var jsToken: String? = null
-                                        var jsUser: String? = null
-                                        try {
-                                            if (!jsResult.isNullOrBlank() && jsResult != "null") {
-                                                val clean = if (jsResult.startsWith("\"") && jsResult.endsWith("\"")) {
-                                                    JSONObject(JSONObject("{\"d\":$jsResult}").getString("d"))
-                                                } else {
-                                                    JSONObject(jsResult)
-                                                }
-                                                jsToken = clean.optString("token").ifEmpty { null }
-                                                jsUser = clean.optString("user").ifEmpty { null }
-                                            }
-                                        } catch (_: Exception) {}
-
-                                        val resolvedToken = jsToken ?: vToken ?: "web_session"
-                                        onAuthCompleted(resolvedToken, cookies, jsUser)
+                                    // Case 1: Direct token & vendor from ElJur redirect
+                                    if (!tokenParam.isNullOrBlank() && !vendorParam.isNullOrBlank()) {
+                                        hasCaptured = true
+                                        val cookies = cookieManager.getCookie("https://edu.rk.gov.ru")
+                                        onAuthCompleted(tokenParam, cookies, loginParam)
+                                        return
                                     }
-                                }
+
+                                    // Case 2: flow=v2 exchange token (v_token)
+                                    if (!vTokenParam.isNullOrBlank()) {
+                                        hasCaptured = true
+                                        val cookies = cookieManager.getCookie("https://edu.rk.gov.ru")
+                                        onAuthCompleted(vTokenParam, cookies, loginParam)
+                                        return
+                                    }
+
+                                    // Case 3: Landed on journal web interface (/journal-app, /journal-student)
+                                    val isTargetDiary = url.contains("/journal-app") ||
+                                            url.contains("/journal-student") ||
+                                            (url.contains("edu.rk.gov.ru") && !url.contains("/authorize") &&
+                                             !url.contains("/journal-esia") && !url.contains("esia.gosuslugi.ru") &&
+                                             !url.contains("flow=v2"))
+
+                                    if (isTargetDiary) {
+                                        hasCaptured = true
+                                        val cookies = cookieManager.getCookie("https://edu.rk.gov.ru")
+
+                                        evaluateJavascript(
+                                            """
+                                            (function() {
+                                                var t = '';
+                                                try {
+                                                    t = localStorage.getItem('token') || localStorage.getItem('auth_token') || sessionStorage.getItem('token') || '';
+                                                } catch(e) {}
+                                                var u = '';
+                                                try {
+                                                    var el = document.querySelector('.user-name, .b-dropdown__user, .header-user__name, .m-user__name');
+                                                    if (el) u = el.innerText.trim();
+                                                } catch(e) {}
+                                                return JSON.stringify({ token: t, user: u });
+                                            })()
+                                            """.trimIndent()
+                                        ) { jsResult ->
+                                            var jsToken: String? = null
+                                            var jsUser: String? = null
+                                            try {
+                                                if (!jsResult.isNullOrBlank() && jsResult != "null") {
+                                                    val clean = if (jsResult.startsWith("\"") && jsResult.endsWith("\"")) {
+                                                        JSONObject(JSONObject("{\"d\":$jsResult}").getString("d"))
+                                                    } else {
+                                                        JSONObject(jsResult)
+                                                    }
+                                                    jsToken = clean.optString("token").ifEmpty { null }
+                                                    jsUser = clean.optString("user").ifEmpty { null }
+                                                }
+                                            } catch (_: Exception) {}
+
+                                            val resolvedToken = jsToken ?: "web_session"
+                                            onAuthCompleted(resolvedToken, cookies, jsUser)
+                                        }
+                                    }
+                                } catch (_: Exception) {}
                             }
 
                             webViewClient = object : WebViewClient() {
@@ -296,13 +327,19 @@ fun GosuslugiAuthDialog(
                                     return false
                                 }
 
+                                override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
+                                    super.onPageStarted(view, url, favicon)
+                                    checkAndCapture(url)
+                                }
+
                                 override fun onPageFinished(view: WebView?, url: String?) {
                                     super.onPageFinished(view, url)
                                     checkAndCapture(url)
                                 }
                             }
 
-                            loadUrl("https://edu.rk.gov.ru/journal-esia-action/")
+                            // Official flow=v2 used by ru.eljur.region
+                            loadUrl("https://edu.rk.gov.ru/journal-esia-region-action?flow=v2")
                         }
                     },
                     modifier = Modifier.fillMaxSize()
