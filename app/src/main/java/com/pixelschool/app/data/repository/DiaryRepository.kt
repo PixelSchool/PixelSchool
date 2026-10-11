@@ -58,16 +58,20 @@ class DiaryRepository(
             currentSession.userTitle == "Ученик" ||
             currentSession.schoolTitle.isBlank() ||
             currentSession.schoolTitle == "ГИС РК «Образование»" ||
-            currentSession.schoolTitle == "Республика Крым"
+            currentSession.schoolTitle == "Республика Крым" ||
+            currentSession.studentId.isBlank()
         ) {
             try {
-                val (name, school) = apiClient.scrapeUserProfile(cookies)
+                val profile = apiClient.scrapeUserProfile(cookies)
                 var updated = currentSession
-                if (name.isNotBlank() && name != "Ученик") {
-                    updated = updated.copy(userTitle = name)
+                if (profile.name.isNotBlank() && profile.name != "Ученик") {
+                    updated = updated.copy(userTitle = profile.name)
                 }
-                if (school.isNotBlank() && school != "ГИС РК «Образование»" && school != "Республика Крым") {
-                    updated = updated.copy(schoolTitle = school)
+                if (profile.school.isNotBlank() && profile.school != "ГИС РК «Образование»" && profile.school != "Республика Крым") {
+                    updated = updated.copy(schoolTitle = profile.school)
+                }
+                if (profile.studentId.isNotBlank() && updated.studentId.isBlank()) {
+                    updated = updated.copy(studentId = profile.studentId)
                 }
                 if (updated != currentSession) {
                     sessionStore.saveSession(updated, cookies)

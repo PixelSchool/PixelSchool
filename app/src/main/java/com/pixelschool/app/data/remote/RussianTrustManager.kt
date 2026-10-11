@@ -233,6 +233,7 @@ f+rgTMs77slKY+jyEZXRgcdVRnm5xd3kJlHxCg==
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(20, TimeUnit.SECONDS)
             .followRedirects(true)
+            .followSslRedirects(true)
             .build()
     }
 }
