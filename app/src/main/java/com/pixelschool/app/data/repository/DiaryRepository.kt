@@ -194,7 +194,18 @@ class DiaryRepository(
         val cookies = sessionStore.getCookies()
         val effectiveStudentId = activeSession.studentId.ifBlank { null }
 
-        // Try getting official term marks first
+        // 1. Primary: Scrape full report card from journal-student-grades-action (SSR)
+        if (!cookies.isNullOrEmpty()) {
+            val webMarks = apiClient.scrapeMarksFromWeb(cookies, effectiveStudentId)
+            if (webMarks.isSuccess && webMarks.getOrNull()?.isNotEmpty() == true) {
+                return webMarks.getOrThrow()
+            }
+            if (webMarks.exceptionOrNull() is com.pixelschool.app.data.remote.SessionExpiredException) {
+                throw webMarks.exceptionOrNull()!!
+            }
+        }
+
+        // 2. Secondary: Official API v3 if authentic token is available
         val marksResult = apiClient.fetchMarks(
             token = activeSession.token,
             vendor = activeSession.vendor,
@@ -210,44 +221,9 @@ class DiaryRepository(
             throw marksResult.exceptionOrNull()!!
         }
 
-        // Web scraping fallback (SSR pages)
-        if (!cookies.isNullOrEmpty()) {
-            val webMarks = apiClient.scrapeMarksFromWeb(cookies, effectiveStudentId)
-            if (webMarks.isSuccess && webMarks.getOrNull()?.isNotEmpty() == true) {
-                return webMarks.getOrThrow()
-            }
-            if (webMarks.exceptionOrNull() is com.pixelschool.app.data.remote.SessionExpiredException) {
-                throw webMarks.exceptionOrNull()!!
-            }
-        }
-
-        // Fallback: aggregate marks from loaded schedule lessons
-        val schedule = try { getSchedule() } catch (_: Exception) { emptyList() }
-        val subjectMarksMap = mutableMapOf<String, MutableList<Mark>>()
-        for (day in schedule) {
-            for (lesson in day.lessons) {
-                if (lesson.marks.isNotEmpty()) {
-                    val list = subjectMarksMap.getOrPut(lesson.subject) { mutableListOf() }
-                    list.addAll(lesson.marks)
-                }
-            }
-        }
-
-        if (subjectMarksMap.isNotEmpty()) {
-            return subjectMarksMap.map { (subject, marks) ->
-                val numericValues = marks.mapNotNull { it.numericValue }
-                val avg = if (numericValues.isNotEmpty()) numericValues.average().toFloat() else 0f
-                SubjectSummary(
-                    subject = subject,
-                    average = avg,
-                    marks = marks
-                )
-            }.sortedByDescending { it.average }
-        }
-
         if (marksResult.isFailure) {
             throw marksResult.exceptionOrNull()
-                ?: Exception("Не удалось загрузить оценки из региональной системы")
+                ?: Exception("Не удалось загрузить сводную ведомость оценок")
         }
 
         return emptyList()

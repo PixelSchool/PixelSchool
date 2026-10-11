@@ -1382,14 +1382,8 @@ class EljurApiClient(
             val candidateUrls = mutableListOf<String>()
             if (!cleanStudent.isNullOrBlank()) {
                 candidateUrls.add("$baseUrl/journal-student-grades-action/u.$cleanStudent")
-                candidateUrls.add("$baseUrl/journal-app/itog/u.$cleanStudent")
-                candidateUrls.add("$baseUrl/journal-app/marks/u.$cleanStudent")
-                candidateUrls.add("$baseUrl/journal-app/u.$cleanStudent")
             }
             candidateUrls.add("$baseUrl/journal-student-grades-action")
-            candidateUrls.add("$baseUrl/journal-app/itog")
-            candidateUrls.add("$baseUrl/journal-app/marks")
-            candidateUrls.add("$baseUrl/journal-app")
 
             for (targetUrl in candidateUrls) {
                 val req = buildRequest(targetUrl, cookies, isJson = false)
@@ -1416,111 +1410,277 @@ class EljurApiClient(
                 }
             }
 
-            Result.failure(Exception("Не удалось извлечь оценки со страницы регионального портала"))
+            Result.failure(Exception("Не удалось извлечь оценки со страницы сводной ведомости"))
         } catch (e: Exception) {
             Result.failure(e)
         }
     }
 
-    private fun parseGradesHtml(doc: org.jsoup.nodes.Document): List<SubjectSummary> {
-        val rows = doc.select("tr.journal-table__row, tr.marks-row, tr.dnevnik-row, table.journal tr, table.dnevnik tr, table.grid tr, table tr")
-        if (rows.isEmpty()) return emptyList()
+    private data class ColumnMeta(
+        val quarterIndex: Int? = null,
+        val isYear: Boolean = false
+    )
 
-        val subjectMap = LinkedHashMap<String, SubjectSummary>()
+    private data class QuarterData(
+        val marks: MutableList<Mark> = mutableListOf(),
+        var average: Float = 0f,
+        var finalMark: String? = null
+    )
 
-        for (row in rows) {
-            val subjectElem = row.selectFirst(".subject, .lesson-name, .discipline, .subject-title, td.name, td:first-child") ?: continue
-            val subjectName = subjectElem.text().trim()
-            if (subjectName.isBlank() ||
-                subjectName.contains("Предмет", ignoreCase = true) ||
-                subjectName.contains("Дисциплина", ignoreCase = true) ||
-                subjectName.contains("ФИО", ignoreCase = true) ||
-                subjectName.length < 2 ||
-                row.children().all { it.tagName() == "th" }
-            ) {
-                continue
+    private data class ParsedPeriodData(
+        val marks: List<Mark>,
+        val average: Float,
+        val finalMark: String?
+    )
+
+    private fun parseCellPeriodData(cell: org.jsoup.nodes.Element): ParsedPeriodData {
+        val marks = mutableListOf<Mark>()
+
+        // 1. Explicit mark badges/spans
+        val markElems = cell.select(".mark, .grade, .mark-badge, span.cell-mark, .mark_val, .val, .cell-grade, .m-mark, span.mark, .dnevnik-mark, .cell-data span")
+        for (mElem in markElems) {
+            val mVal = mElem.ownText().ifBlank { mElem.text() }.trim()
+            if (mVal.isNotBlank() && mVal.length <= 4 && (mVal[0].isDigit() || mVal.equals("н", true) || mVal.equals("зач", true))) {
+                val subWeight = mElem.selectFirst("sub")?.text()?.toIntOrNull()
+                    ?: mElem.selectFirst("sup")?.text()?.toIntOrNull()
+                    ?: mElem.attr("data-weight").toIntOrNull()
+                    ?: Regex("""вес[:\s]+(\d+)""", RegexOption.IGNORE_CASE).find(mElem.attr("title"))?.groupValues?.get(1)?.toIntOrNull()
+                    ?: 1
+                val tooltip = mElem.attr("title").ifBlank { null }
+                val dateMatch = tooltip?.let { Regex("""\b(\d{2}\.\d{2}(?:\.\d{4})?)\b""").find(it)?.groupValues?.get(1) }
+                val isCtrl = subWeight > 1 || (tooltip?.contains("контроль", ignoreCase = true) == true) || (tooltip?.contains("самостоят", ignoreCase = true) == true)
+                marks.add(Mark(value = mVal, weight = subWeight, date = dateMatch ?: "", comment = tooltip, isControl = isCtrl))
             }
+        }
 
-            val markElements = row.select(".mark, .grade, .mark-badge, span.cell-mark, .mark_val, .val, .cell-grade, .m-mark, span.mark, .dnevnik-mark")
-            val marks = mutableListOf<Mark>()
-
-            for (mElem in markElements) {
-                val mVal = mElem.ownText().ifBlank { mElem.text() }.trim()
-                if (mVal.isNotBlank() && mVal.length <= 4) {
-                    val subWeight = mElem.selectFirst("sub")?.text()?.toIntOrNull()
-                        ?: mElem.selectFirst("sup")?.text()?.toIntOrNull()
-                        ?: mElem.attr("data-weight").toIntOrNull()
-                        ?: Regex("""вес[:\s]+(\d+)""", RegexOption.IGNORE_CASE).find(mElem.attr("title"))?.groupValues?.get(1)?.toIntOrNull()
-                        ?: 1
-
-                    val tooltip = mElem.attr("title").ifBlank { null }
-                    val dateMatch = tooltip?.let { Regex("""\b(\d{2}\.\d{2}(?:\.\d{4})?)\b""").find(it)?.groupValues?.get(1) }
-                    val isCtrl = subWeight > 1 || (tooltip?.contains("контроль", ignoreCase = true) == true) || (tooltip?.contains("самостоят", ignoreCase = true) == true)
-
-                    marks.add(
-                        Mark(
-                            value = mVal,
-                            weight = subWeight,
-                            date = dateMatch ?: "",
-                            comment = tooltip,
-                            isControl = isCtrl
-                        )
-                    )
-                }
+        // 2. Average in cell
+        val avgElem = cell.selectFirst(".average, .avg, .average-grade, .middle-mark, .cell-avg")
+        var avgVal = avgElem?.text()?.replace(',', '.')?.trim()?.toFloatOrNull() ?: 0f
+        if (avgVal == 0f) {
+            val avgMatch = Regex("""(?:^|[(\s])([2-5][.,]\d{1,2})(?:[)\s]|$)""").find(cell.text())
+            if (avgMatch != null) {
+                avgVal = avgMatch.groupValues[1].replace(',', '.').toFloatOrNull() ?: 0f
             }
+        }
 
-            if (marks.isEmpty()) {
-                val cells = row.select("td")
-                for (cell in cells.drop(1)) {
-                    val cellText = cell.ownText().trim()
-                    if (cellText.isNotEmpty() && cellText.length <= 4 && (cellText[0].isDigit() || cellText.equals("н", true) || cellText.equals("зач", true))) {
-                        val tooltip = cell.attr("title").ifBlank { null }
-                        val subWeight = Regex("""вес[:\s]+(\d+)""", RegexOption.IGNORE_CASE).find(tooltip ?: "")?.groupValues?.get(1)?.toIntOrNull() ?: 1
-                        marks.add(
-                            Mark(
-                                value = cellText,
-                                weight = subWeight,
-                                comment = tooltip,
-                                isControl = subWeight > 1 || (tooltip?.contains("контроль", true) == true)
-                            )
-                        )
+        // 3. Final mark in cell
+        val finalElem = cell.selectFirst(".itog, .final, .final-mark, .quarter-mark, .period-mark, strong, b")
+        val finalVal = finalElem?.text()?.trim()?.takeIf { it.length <= 3 && it.any { c -> c.isDigit() } }
+
+        // 4. Fallback if no mark elements found: tokenize text
+        if (marks.isEmpty()) {
+            val cleanText = cell.ownText().ifBlank { cell.text() }
+            val tokens = cleanText.split(Regex("""[\s,;]+""")).map { it.trim() }
+            for (token in tokens) {
+                if (token.isNotEmpty() && token.length <= 3 && (token[0].isDigit() || token.equals("н", true) || token.equals("зач", true))) {
+                    if (token.contains(".") || token.contains(",")) {
+                        if (avgVal == 0f) {
+                            avgVal = token.replace(',', '.').toFloatOrNull() ?: 0f
+                        }
+                    } else {
+                        marks.add(Mark(value = token, weight = 1))
                     }
                 }
             }
+        }
 
-            val avgElem = row.selectFirst(".average, .avg, .average-grade, .middle-mark, .cell-avg")
-            val avgStr = avgElem?.text()?.replace(',', '.')?.trim()
-            val avgFloat = avgStr?.toFloatOrNull() ?: if (marks.isNotEmpty()) {
-                val totalWeight = marks.filter { it.numericValue != null }.sumOf { it.weight }
-                if (totalWeight > 0) {
-                    val weightedSum = marks.sumOf { ((it.numericValue ?: 0f) * it.weight).toDouble() }
-                    (weightedSum / totalWeight).toFloat()
-                } else 0f
-            } else 0f
+        if (avgVal == 0f && marks.isNotEmpty()) {
+            val numMarks = marks.filter { it.numericValue != null }
+            val totalWeight = numMarks.sumOf { it.weight }
+            if (totalWeight > 0) {
+                avgVal = (numMarks.sumOf { ((it.numericValue ?: 0f) * it.weight).toDouble() } / totalWeight).toFloat()
+            }
+        }
 
-            val finalMarkElem = row.selectFirst(".itog, .final-mark, .quarter-mark, .period-mark, td.itog")
-            val finalMark = finalMarkElem?.text()?.trim()?.takeIf { it.isNotBlank() && it.length <= 3 }
+        return ParsedPeriodData(marks, avgVal, finalVal)
+    }
 
-            if (marks.isNotEmpty() || avgFloat > 0f || finalMark != null) {
-                val existing = subjectMap[subjectName]
-                if (existing != null) {
-                    val mergedMarks = (existing.marks + marks).distinctBy { "${it.value}_${it.date}_${it.comment}" }
-                    val bestFinal = existing.finalMark ?: finalMark
-                    val bestAvg = if (avgFloat > 0f) avgFloat else existing.average
+    private fun parseGradesHtml(doc: org.jsoup.nodes.Document): List<SubjectSummary> {
+        val subjectMap = LinkedHashMap<String, SubjectSummary>()
+        val tables = doc.select("table")
+
+        for (table in tables) {
+            val rows = table.select("tr")
+            if (rows.isEmpty()) continue
+
+            // 1. Column mapping via headers
+            val headerRows = rows.filter { r -> r.select("th").isNotEmpty() || r.children().any { it.tagName() == "th" } }
+            val colMapping = mutableMapOf<Int, ColumnMeta>()
+
+            if (headerRows.isNotEmpty()) {
+                val firstHeaderRow = headerRows.first()
+                var currentColIdx = 0
+                for (th in firstHeaderRow.children()) {
+                    val colspan = th.attr("colspan").toIntOrNull() ?: 1
+                    val text = th.text().trim().lowercase()
+                    val qIdx = when {
+                        text.contains("1") && (text.contains("четв") || text.contains("пер") || text.contains("полугод") || text.contains("триместр")) -> 0
+                        text.contains("i") && !text.contains("ii") && !text.contains("iv") && (text.contains("четв") || text.contains("пер") || text.contains("полугод")) -> 0
+                        text.contains("2") && (text.contains("четв") || text.contains("пер") || text.contains("полугод") || text.contains("триместр")) -> 1
+                        text.contains("ii") && !text.contains("iii") && (text.contains("четв") || text.contains("пер") || text.contains("полугод")) -> 1
+                        text.contains("3") && (text.contains("четв") || text.contains("пер") || text.contains("полугод") || text.contains("триместр")) -> 2
+                        text.contains("iii") && (text.contains("четв") || text.contains("пер") || text.contains("полугод")) -> 2
+                        text.contains("4") && (text.contains("четв") || text.contains("пер") || text.contains("полугод") || text.contains("триместр")) -> 3
+                        text.contains("iv") && (text.contains("четв") || text.contains("пер") || text.contains("полугод")) -> 3
+                        else -> null
+                    }
+                    val isYear = text.contains("год") || text.contains("итог") || text.contains("экзамен") || text.contains("аттестат")
+
+                    for (c in 0 until colspan) {
+                        colMapping[currentColIdx + c] = ColumnMeta(quarterIndex = qIdx, isYear = isYear)
+                    }
+                    currentColIdx += colspan
+                }
+            }
+
+            // 2. Data rows
+            val dataRows = rows.filter { r -> r.select("td").isNotEmpty() }
+            for (row in dataRows) {
+                val cells = row.select("td")
+                if (cells.isEmpty()) continue
+
+                val subjectCell = row.selectFirst(".subject, .lesson-name, .discipline, .subject-title, td.name") ?: cells.first()
+                val subjectName = subjectCell.text().trim()
+                if (subjectName.isBlank() ||
+                    subjectName.contains("Предмет", ignoreCase = true) ||
+                    subjectName.contains("Дисциплина", ignoreCase = true) ||
+                    subjectName.contains("ФИО", ignoreCase = true) ||
+                    subjectName.contains("Итого", ignoreCase = true) ||
+                    subjectName.length < 2
+                ) {
+                    continue
+                }
+
+                val subjectColIdx = cells.indexOf(subjectCell).takeIf { it >= 0 } ?: 0
+                val quarters = Array(4) { QuarterData() }
+                var yearlyFinalMark: String? = null
+                var yearlyAverage: Float = 0f
+
+                var usedHeaderMapping = false
+
+                if (colMapping.values.any { it.quarterIndex != null || it.isYear }) {
+                    usedHeaderMapping = true
+                    for (cIdx in cells.indices) {
+                        if (cIdx == subjectColIdx) continue
+                        val cell = cells[cIdx]
+                        val meta = colMapping[cIdx] ?: continue
+                        if (meta.quarterIndex != null && meta.quarterIndex in 0..3) {
+                            val parsed = parseCellPeriodData(cell)
+                            val qData = quarters[meta.quarterIndex]
+                            qData.marks.addAll(parsed.marks)
+                            if (parsed.average > 0f) qData.average = parsed.average
+                            if (!parsed.finalMark.isNullOrBlank()) qData.finalMark = parsed.finalMark
+                        } else if (meta.isYear) {
+                            val parsed = parseCellPeriodData(cell)
+                            if (parsed.average > 0f) yearlyAverage = parsed.average
+                            if (!parsed.finalMark.isNullOrBlank()) yearlyFinalMark = parsed.finalMark
+                        }
+                    }
+                }
+
+                if (!usedHeaderMapping || quarters.all { it.marks.isEmpty() && it.average == 0f && it.finalMark == null }) {
+                    var foundByClass = false
+                    for (cell in cells) {
+                        if (cell == subjectCell) continue
+                        val cClass = cell.className().lowercase()
+                        val qIdx = when {
+                            cClass.contains("q1") || cClass.contains("period-1") || cClass.contains("quarter-1") || cell.attr("data-period") == "1" -> 0
+                            cClass.contains("q2") || cClass.contains("period-2") || cClass.contains("quarter-2") || cell.attr("data-period") == "2" -> 1
+                            cClass.contains("q3") || cClass.contains("period-3") || cClass.contains("quarter-3") || cell.attr("data-period") == "3" -> 2
+                            cClass.contains("q4") || cClass.contains("period-4") || cClass.contains("quarter-4") || cell.attr("data-period") == "4" -> 3
+                            else -> null
+                        }
+                        if (qIdx != null) {
+                            foundByClass = true
+                            val parsed = parseCellPeriodData(cell)
+                            val qData = quarters[qIdx]
+                            qData.marks.addAll(parsed.marks)
+                            if (parsed.average > 0f) qData.average = parsed.average
+                            if (!parsed.finalMark.isNullOrBlank()) qData.finalMark = parsed.finalMark
+                        } else if (cClass.contains("year") || cClass.contains("itog") || cClass.contains("final")) {
+                            val parsed = parseCellPeriodData(cell)
+                            if (parsed.average > 0f) yearlyAverage = parsed.average
+                            if (!parsed.finalMark.isNullOrBlank()) yearlyFinalMark = parsed.finalMark
+                        }
+                    }
+
+                    if (!foundByClass) {
+                        val otherCells = cells.filter { it != subjectCell }
+                        if (otherCells.size in 4..6) {
+                            for (i in 0 until minOf(4, otherCells.size)) {
+                                val parsed = parseCellPeriodData(otherCells[i])
+                                val qData = quarters[i]
+                                qData.marks.addAll(parsed.marks)
+                                if (parsed.average > 0f) qData.average = parsed.average
+                                if (!parsed.finalMark.isNullOrBlank()) qData.finalMark = parsed.finalMark
+                            }
+                            if (otherCells.size >= 5) {
+                                val yearCell = otherCells.last()
+                                val parsed = parseCellPeriodData(yearCell)
+                                if (parsed.average > 0f) yearlyAverage = parsed.average
+                                if (!parsed.finalMark.isNullOrBlank()) yearlyFinalMark = parsed.finalMark
+                            }
+                        } else {
+                            val allRowMarks = mutableListOf<Mark>()
+                            for (cell in otherCells) {
+                                allRowMarks.addAll(parseCellPeriodData(cell).marks)
+                            }
+                            if (allRowMarks.isNotEmpty()) {
+                                val grouped = groupMarksIntoPeriods(allRowMarks, yearlyFinalMark)
+                                for (i in 0 until minOf(4, grouped.size)) {
+                                    quarters[i].marks.addAll(grouped[i].marks)
+                                    quarters[i].average = grouped[i].average
+                                    quarters[i].finalMark = grouped[i].finalMark
+                                }
+                            }
+                        }
+                    }
+                }
+
+                for (q in 0..3) {
+                    if (quarters[q].average == 0f && quarters[q].marks.isNotEmpty()) {
+                        val numMarks = quarters[q].marks.filter { it.numericValue != null }
+                        val totalWeight = numMarks.sumOf { it.weight }
+                        if (totalWeight > 0) {
+                            quarters[q].average = (numMarks.sumOf { ((it.numericValue ?: 0f) * it.weight).toDouble() } / totalWeight).toFloat()
+                        }
+                    }
+                }
+
+                if (yearlyAverage == 0f) {
+                    val nonZeroQuarterAvgs = quarters.map { it.average }.filter { it > 0f }
+                    yearlyAverage = if (nonZeroQuarterAvgs.isNotEmpty()) {
+                        nonZeroQuarterAvgs.average().toFloat()
+                    } else {
+                        val allNumMarks = quarters.flatMap { it.marks }.filter { it.numericValue != null }
+                        val totalWeight = allNumMarks.sumOf { it.weight }
+                        if (totalWeight > 0) {
+                            (allNumMarks.sumOf { ((it.numericValue ?: 0f) * it.weight).toDouble() } / totalWeight).toFloat()
+                        } else 0f
+                    }
+                }
+
+                if (yearlyFinalMark == null) {
+                    val fmElem = row.selectFirst(".itog, .final-mark, .quarter-mark, .period-mark, td.itog")
+                    yearlyFinalMark = fmElem?.text()?.trim()?.takeIf { it.isNotBlank() && it.length <= 3 }
+                }
+
+                val periodMarksList = listOf(
+                    PeriodMarks("1", "1 четверть", quarters[0].marks, quarters[0].average, quarters[0].finalMark),
+                    PeriodMarks("2", "2 четверть", quarters[1].marks, quarters[1].average, quarters[1].finalMark),
+                    PeriodMarks("3", "3 четверть", quarters[2].marks, quarters[2].average, quarters[2].finalMark),
+                    PeriodMarks("4", "4 четверть", quarters[3].marks, quarters[3].average, quarters[3].finalMark)
+                )
+
+                val allSubjectMarks = quarters.flatMap { it.marks }
+
+                if (allSubjectMarks.isNotEmpty() || yearlyAverage > 0f || yearlyFinalMark != null) {
                     subjectMap[subjectName] = SubjectSummary(
                         subject = subjectName,
-                        average = bestAvg,
-                        marks = mergedMarks,
-                        finalMark = bestFinal,
-                        periodMarks = groupMarksIntoPeriods(mergedMarks, bestFinal)
-                    )
-                } else {
-                    subjectMap[subjectName] = SubjectSummary(
-                        subject = subjectName,
-                        average = avgFloat,
-                        marks = marks,
-                        finalMark = finalMark,
-                        periodMarks = groupMarksIntoPeriods(marks, finalMark)
+                        average = yearlyAverage,
+                        marks = allSubjectMarks,
+                        finalMark = yearlyFinalMark,
+                        periodMarks = periodMarksList
                     )
                 }
             }
