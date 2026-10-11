@@ -405,8 +405,8 @@ fun GosuslugiAuthDialog(
                                 }
                             }
 
-                            // Regional entrypoint for ESIA authorization on Crimean portal
-                            loadUrl("https://edu.rk.gov.ru/authorize", chromeHeaders)
+                            // Official mobile flow=v2 from ru.eljur.region: generates v_token and full API session
+                            loadUrl("https://edu.rk.gov.ru/journal-esia-region-action?flow=v2", chromeHeaders)
                         }
                     },
                     modifier = Modifier.fillMaxSize()
