@@ -24,17 +24,65 @@ class SessionStore(context: Context) {
     }
 
     fun saveSession(session: UserSession, cookies: String? = null) {
+        val existingFirst = prefs.getString(KEY_FIRST_NAME, "") ?: ""
+        val existingLast = prefs.getString(KEY_LAST_NAME, "") ?: ""
+        val existingSchool = prefs.getString(KEY_SCHOOL_NAME, "") ?: ""
+        val existingUserTitle = prefs.getString(KEY_USER_TITLE, "") ?: ""
+        val existingSchoolTitle = prefs.getString(KEY_SCHOOL_TITLE, "") ?: ""
+
         val parts = session.userTitle.trim().split(Regex("""\s+"""))
-        val derivedLast = if (session.lastName.isNotBlank()) session.lastName else parts.getOrNull(0) ?: ""
-        val derivedFirst = if (session.firstName.isNotBlank()) session.firstName else parts.getOrNull(1) ?: ""
-        val derivedSchool = if (session.schoolName.isNotBlank()) session.schoolName else session.schoolTitle
+        val derivedLast = if (session.lastName.isNotBlank()) {
+            session.lastName
+        } else if (parts.size >= 2 && session.userTitle != "Ученик") {
+            parts.getOrNull(0) ?: ""
+        } else {
+            existingLast
+        }
+
+        val derivedFirst = if (session.firstName.isNotBlank()) {
+            session.firstName
+        } else if (parts.size >= 2 && session.userTitle != "Ученик") {
+            parts.getOrNull(1) ?: ""
+        } else {
+            existingFirst
+        }
+
+        val derivedSchool = if (session.schoolName.isNotBlank() && session.schoolName != "Республика Крым" && session.schoolName != "ГИС РК «Образование»") {
+            session.schoolName
+        } else if (session.schoolTitle.isNotBlank() && session.schoolTitle != "Республика Крым" && session.schoolTitle != "ГИС РК «Образование»") {
+            session.schoolTitle
+        } else if (existingSchool.isNotBlank() && existingSchool != "Республика Крым" && existingSchool != "ГИС РК «Образование»") {
+            existingSchool
+        } else {
+            session.schoolName.ifBlank { session.schoolTitle.ifBlank { "Республика Крым" } }
+        }
+
+        val effectiveUserTitle = if (session.userTitle.isNotBlank() && session.userTitle != "Ученик") {
+            session.userTitle
+        } else if (derivedLast.isNotBlank() && derivedFirst.isNotBlank()) {
+            "$derivedLast $derivedFirst".trim()
+        } else if (existingUserTitle.isNotBlank() && existingUserTitle != "Ученик") {
+            existingUserTitle
+        } else {
+            session.userTitle.ifBlank { "Ученик" }
+        }
+
+        val effectiveSchoolTitle = if (session.schoolTitle.isNotBlank() && session.schoolTitle != "Республика Крым" && session.schoolTitle != "ГИС РК «Образование»") {
+            session.schoolTitle
+        } else if (derivedSchool.isNotBlank() && derivedSchool != "Республика Крым" && derivedSchool != "ГИС РК «Образование»") {
+            derivedSchool
+        } else if (existingSchoolTitle.isNotBlank() && existingSchoolTitle != "Республика Крым" && existingSchoolTitle != "ГИС РК «Образование»") {
+            existingSchoolTitle
+        } else {
+            session.schoolTitle.ifBlank { "Республика Крым" }
+        }
 
         prefs.edit().apply {
             putString(KEY_TOKEN, session.token)
             putString(KEY_VENDOR, session.vendor)
             putString(KEY_LOGIN, session.login)
-            putString(KEY_USER_TITLE, session.userTitle)
-            putString(KEY_SCHOOL_TITLE, session.schoolTitle)
+            putString(KEY_USER_TITLE, effectiveUserTitle)
+            putString(KEY_SCHOOL_TITLE, effectiveSchoolTitle)
             putBoolean(KEY_IS_DEMO, session.isDemo)
             putString(KEY_STUDENT_ID, session.studentId)
             putString(KEY_FIRST_NAME, derivedFirst)

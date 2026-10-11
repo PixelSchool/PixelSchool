@@ -103,12 +103,19 @@ object TokenExtractor {
         return url.contains("code=") && !url.contains("v_token=")
     }
 
-    /**
-     * Decodes JWT payload (without external libraries) and extracts user identifier or name.
-     */
-    fun extractUserTitleFromJwt(jwt: String?): String? {
-        if (jwt == null || !jwt.startsWith("eyJ")) return null
+    data class JwtProfile(
+        val firstName: String? = null,
+        val lastName: String? = null,
+        val middleName: String? = null,
+        val fullName: String? = null,
+        val school: String? = null
+    )
 
+    /**
+     * Decodes JWT payload and extracts profile info including personData fields (firstName, lastName, middleName, school).
+     */
+    fun extractProfileFromJwt(jwt: String?): JwtProfile? {
+        if (jwt == null || !jwt.startsWith("eyJ")) return null
         return try {
             val parts = jwt.split(".")
             if (parts.size >= 2) {
@@ -121,61 +128,87 @@ object TokenExtractor {
                 val bytes = Base64.decode(payloadStr, Base64.URL_SAFE or Base64.NO_WRAP)
                 val json = JSONObject(String(bytes, Charsets.UTF_8))
 
-                val fullname = json.optString("fullname").ifBlank { null }
+                val personData = json.optJSONObject("personData")
+                    ?: json.optJSONObject("person")
+                    ?: json.optJSONObject("user")
+
+                var first = personData?.optString("firstName")?.ifBlank { null }
+                    ?: personData?.optString("first_name")?.ifBlank { null }
+                    ?: json.optString("first_name").ifBlank { null }
+                    ?: json.optString("given_name").ifBlank { null }
+                    ?: json.optString("firstname").ifBlank { null }
+
+                var last = personData?.optString("lastName")?.ifBlank { null }
+                    ?: personData?.optString("last_name")?.ifBlank { null }
+                    ?: json.optString("last_name").ifBlank { null }
+                    ?: json.optString("family_name").ifBlank { null }
+                    ?: json.optString("lastname").ifBlank { null }
+
+                val middle = personData?.optString("middleName")?.ifBlank { null }
+                    ?: personData?.optString("middle_name")?.ifBlank { null }
+                    ?: personData?.optString("patronymic")?.ifBlank { null }
+                    ?: json.optString("middle_name").ifBlank { null }
+                    ?: json.optString("patronymic").ifBlank { null }
+
+                var full = personData?.optString("fullname")?.ifBlank { null }
+                    ?: personData?.optString("name")?.ifBlank { null }
+                    ?: json.optString("fullname").ifBlank { null }
                     ?: json.optString("name").ifBlank { null }
                     ?: json.optString("formatted_name").ifBlank { null }
                     ?: json.optString("kid_fullname").ifBlank { null }
 
-                if (!fullname.isNullOrBlank()) return fullname
+                if (full.isNullOrBlank()) {
+                    if (!last.isNullOrBlank() && !first.isNullOrBlank()) {
+                        full = listOfNotNull(last, first, middle).joinToString(" ")
+                    }
+                } else if (first.isNullOrBlank() && last.isNullOrBlank()) {
+                    val partsName = full.split(" ").filter { it.isNotBlank() }
+                    if (partsName.size >= 2) {
+                        last = partsName[0]
+                        first = partsName[1]
+                    }
+                }
 
-                val first = json.optString("first_name").ifBlank {
-                    json.optString("given_name").ifBlank {
-                        json.optString("firstname").ifBlank { null }
-                    }
-                }
-                val last = json.optString("last_name").ifBlank {
-                    json.optString("family_name").ifBlank {
-                        json.optString("lastname").ifBlank { null }
-                    }
-                }
-                if (!last.isNullOrBlank() && !first.isNullOrBlank()) {
-                    return "$last $first".trim()
-                }
+                val school = personData?.optString("school")?.ifBlank { null }
+                    ?: personData?.optString("schoolName")?.ifBlank { null }
+                    ?: personData?.optString("school_title")?.ifBlank { null }
+                    ?: json.optString("school_title").ifBlank { null }
+                    ?: json.optString("school").ifBlank { null }
+                    ?: json.optString("org_name").ifBlank { null }
+                    ?: json.optString("vendor_title").ifBlank { null }
 
                 val sbj = json.optJSONObject("urn:esia:sbj")
                 val sbjName = sbj?.optString("urn:esia:sbj:nam")?.ifBlank { null }
-                if (!sbjName.isNullOrBlank()) return sbjName
 
-                val sub = json.optString("sub").ifBlank { null }
-                if (!sub.isNullOrBlank() && !sub.all { it.isDigit() }) return sub
+                val effectiveFull = full ?: sbjName
 
-                null
+                JwtProfile(
+                    firstName = first,
+                    lastName = last,
+                    middleName = middle,
+                    fullName = effectiveFull,
+                    school = school
+                )
             } else null
         } catch (_: Exception) {
             null
         }
     }
 
-    fun extractSchoolFromJwt(jwt: String?): String? {
-        if (jwt == null || !jwt.startsWith("eyJ")) return null
-        return try {
-            val parts = jwt.split(".")
-            if (parts.size >= 2) {
-                var payloadStr = parts[1]
-                val remainder = payloadStr.length % 4
-                if (remainder > 0) {
-                    payloadStr += "=".repeat(4 - remainder)
-                }
-                val bytes = Base64.decode(payloadStr, Base64.URL_SAFE or Base64.NO_WRAP)
-                val json = JSONObject(String(bytes, Charsets.UTF_8))
-                json.optString("school_title").ifBlank { null }
-                    ?: json.optString("school").ifBlank { null }
-                    ?: json.optString("org_name").ifBlank { null }
-                    ?: json.optString("vendor_title").ifBlank { null }
-            } else null
-        } catch (_: Exception) {
-            null
+    /**
+     * Decodes JWT payload (without external libraries) and extracts user identifier or name.
+     */
+    fun extractUserTitleFromJwt(jwt: String?): String? {
+        val profile = extractProfileFromJwt(jwt)
+        if (!profile?.fullName.isNullOrBlank()) return profile?.fullName
+        if (!profile?.lastName.isNullOrBlank() && !profile?.firstName.isNullOrBlank()) {
+            return "${profile.lastName} ${profile.firstName}".trim()
         }
+        return null
+    }
+
+    fun extractSchoolFromJwt(jwt: String?): String? {
+        return extractProfileFromJwt(jwt)?.school
     }
 }
 

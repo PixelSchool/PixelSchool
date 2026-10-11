@@ -6,6 +6,7 @@ import com.pixelschool.app.data.model.AcademicPeriod
 import com.pixelschool.app.data.model.DaySchedule
 import com.pixelschool.app.data.model.Homework
 import com.pixelschool.app.data.model.Mark
+import com.pixelschool.app.data.model.PeriodMarks
 import com.pixelschool.app.data.model.SubjectSummary
 import com.pixelschool.app.data.model.UserSession
 import com.pixelschool.app.data.remote.AuthCredentials
@@ -235,6 +236,38 @@ class DiaryRepository(
         if (marksResult.exceptionOrNull() is com.pixelschool.app.data.remote.SessionExpiredException) {
             throw marksResult.exceptionOrNull()!!
         }
+
+        // 3. Fallback: Aggregate marks from timetable schedule if web scraping & API v3 both fail/empty
+        try {
+            val schedule = getSchedule(0)
+            val allLessons = schedule.flatMap { it.lessons }
+            val marksBySubject = allLessons
+                .filter { it.marks.isNotEmpty() }
+                .groupBy { it.subject }
+
+            if (marksBySubject.isNotEmpty()) {
+                val summaries = marksBySubject.map { (subj, lessons) ->
+                    val marks = lessons.flatMap { it.marks }
+                    val num = marks.mapNotNull { it.numericValue }
+                    val avg = if (num.isNotEmpty()) num.average().toFloat() else 0f
+                    SubjectSummary(
+                        subject = subj,
+                        average = avg,
+                        marks = marks,
+                        periodMarks = listOf(
+                            PeriodMarks("1", "1 четверть", marks, avg, null),
+                            PeriodMarks("2", "2 четверть", emptyList<Mark>(), 0f, null),
+                            PeriodMarks("3", "3 четверть", emptyList<Mark>(), 0f, null),
+                            PeriodMarks("4", "4 четверть", emptyList<Mark>(), 0f, null)
+                        )
+                    )
+                }.sortedByDescending { it.average }
+
+                if (summaries.isNotEmpty()) {
+                    return summaries
+                }
+            }
+        } catch (_: Exception) {}
 
         throw marksResult.exceptionOrNull()
             ?: lastError
