@@ -97,7 +97,8 @@ class DiaryRepository(
             vendor = activeSession.vendor,
             studentId = activeSession.studentId.ifBlank { null },
             days = weekRange,
-            cookies = sessionStore.getCookies()
+            cookies = sessionStore.getCookies(),
+            weekOffset = weekOffset
         )
 
         return if (remoteResult.isSuccess) {
@@ -175,6 +176,20 @@ class DiaryRepository(
         if (marksResult.isSuccess && marksResult.getOrNull()?.isNotEmpty() == true) {
             return marksResult.getOrThrow()
         }
+        if (marksResult.exceptionOrNull() is com.pixelschool.app.data.remote.SessionExpiredException) {
+            throw marksResult.exceptionOrNull()!!
+        }
+
+        // Web scraping fallback (SSR pages)
+        if (!cookies.isNullOrEmpty()) {
+            val webMarks = apiClient.scrapeMarksFromWeb(cookies, effectiveStudentId)
+            if (webMarks.isSuccess && webMarks.getOrNull()?.isNotEmpty() == true) {
+                return webMarks.getOrThrow()
+            }
+            if (webMarks.exceptionOrNull() is com.pixelschool.app.data.remote.SessionExpiredException) {
+                throw webMarks.exceptionOrNull()!!
+            }
+        }
 
         // Fallback: aggregate marks from loaded schedule lessons
         val schedule = try { getSchedule() } catch (_: Exception) { emptyList() }
@@ -198,14 +213,6 @@ class DiaryRepository(
                     marks = marks
                 )
             }.sortedByDescending { it.average }
-        }
-
-        // Fallback: web scraping
-        if (!cookies.isNullOrEmpty()) {
-            val webMarks = apiClient.scrapeMarksFromWeb(cookies, effectiveStudentId)
-            if (webMarks.isSuccess && webMarks.getOrNull()?.isNotEmpty() == true) {
-                return webMarks.getOrThrow()
-            }
         }
 
         if (marksResult.isFailure) {
