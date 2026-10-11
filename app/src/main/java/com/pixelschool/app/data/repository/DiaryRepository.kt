@@ -32,9 +32,10 @@ class DiaryRepository(
     suspend fun loginWithSession(
         auth: AuthCredentials?,
         cookies: String?,
-        fallbackUserName: String? = null
+        fallbackUserName: String? = null,
+        fallbackSchoolName: String? = null
     ): Result<UserSession> {
-        val result = apiClient.resolveSession(auth, cookies, fallbackUserName)
+        val result = apiClient.resolveSession(auth, cookies, fallbackUserName, fallbackSchoolName)
         if (result.isSuccess) {
             val s = result.getOrThrow()
             sessionStore.saveSession(s, cookies)
@@ -56,6 +57,7 @@ class DiaryRepository(
 
         if (currentSession.userTitle.isBlank() ||
             currentSession.userTitle == "Ученик" ||
+            currentSession.firstName.isBlank() ||
             currentSession.schoolTitle.isBlank() ||
             currentSession.schoolTitle == "ГИС РК «Образование»" ||
             currentSession.schoolTitle == "Республика Крым" ||
@@ -65,10 +67,17 @@ class DiaryRepository(
                 val profile = apiClient.scrapeUserProfile(cookies)
                 var updated = currentSession
                 if (profile.name.isNotBlank() && profile.name != "Ученик") {
-                    updated = updated.copy(userTitle = profile.name)
+                    updated = updated.copy(
+                        userTitle = profile.name,
+                        firstName = profile.firstName.ifBlank { updated.firstName },
+                        lastName = profile.lastName.ifBlank { updated.lastName }
+                    )
                 }
                 if (profile.school.isNotBlank() && profile.school != "ГИС РК «Образование»" && profile.school != "Республика Крым") {
-                    updated = updated.copy(schoolTitle = profile.school)
+                    updated = updated.copy(
+                        schoolTitle = profile.school,
+                        schoolName = profile.school
+                    )
                 }
                 if (profile.studentId.isNotBlank() && updated.studentId.isBlank()) {
                     updated = updated.copy(studentId = profile.studentId)
@@ -199,6 +208,7 @@ class DiaryRepository(
         val effectiveStudentId = activeSession.studentId.ifBlank { null }
 
         // 1. Primary: Scrape full report card from journal-student-grades-action (SSR)
+        var lastError: Throwable? = null
         if (!cookies.isNullOrEmpty()) {
             val webMarks = apiClient.scrapeMarksFromWeb(cookies, effectiveStudentId)
             if (webMarks.isSuccess && webMarks.getOrNull()?.isNotEmpty() == true) {
@@ -207,6 +217,7 @@ class DiaryRepository(
             if (webMarks.exceptionOrNull() is com.pixelschool.app.data.remote.SessionExpiredException) {
                 throw webMarks.exceptionOrNull()!!
             }
+            lastError = webMarks.exceptionOrNull()
         }
 
         // 2. Secondary: Official API v3 if authentic token is available
@@ -225,11 +236,8 @@ class DiaryRepository(
             throw marksResult.exceptionOrNull()!!
         }
 
-        if (marksResult.isFailure) {
-            throw marksResult.exceptionOrNull()
-                ?: Exception("Не удалось загрузить сводную ведомость оценок")
-        }
-
-        return emptyList()
+        throw marksResult.exceptionOrNull()
+            ?: lastError
+            ?: Exception("Не удалось загрузить сводную ведомость оценок")
     }
 }

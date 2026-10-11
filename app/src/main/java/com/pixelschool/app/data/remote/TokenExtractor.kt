@@ -123,18 +123,55 @@ object TokenExtractor {
 
                 val fullname = json.optString("fullname").ifBlank { null }
                     ?: json.optString("name").ifBlank { null }
+                    ?: json.optString("formatted_name").ifBlank { null }
                     ?: json.optString("kid_fullname").ifBlank { null }
 
                 if (!fullname.isNullOrBlank()) return fullname
+
+                val first = json.optString("first_name").ifBlank {
+                    json.optString("given_name").ifBlank {
+                        json.optString("firstname").ifBlank { null }
+                    }
+                }
+                val last = json.optString("last_name").ifBlank {
+                    json.optString("family_name").ifBlank {
+                        json.optString("lastname").ifBlank { null }
+                    }
+                }
+                if (!last.isNullOrBlank() && !first.isNullOrBlank()) {
+                    return "$last $first".trim()
+                }
 
                 val sbj = json.optJSONObject("urn:esia:sbj")
                 val sbjName = sbj?.optString("urn:esia:sbj:nam")?.ifBlank { null }
                 if (!sbjName.isNullOrBlank()) return sbjName
 
                 val sub = json.optString("sub").ifBlank { null }
-                if (!sub.isNullOrBlank()) return sub
+                if (!sub.isNullOrBlank() && !sub.all { it.isDigit() }) return sub
 
                 null
+            } else null
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    fun extractSchoolFromJwt(jwt: String?): String? {
+        if (jwt == null || !jwt.startsWith("eyJ")) return null
+        return try {
+            val parts = jwt.split(".")
+            if (parts.size >= 2) {
+                var payloadStr = parts[1]
+                val remainder = payloadStr.length % 4
+                if (remainder > 0) {
+                    payloadStr += "=".repeat(4 - remainder)
+                }
+                val bytes = Base64.decode(payloadStr, Base64.URL_SAFE or Base64.NO_WRAP)
+                val json = JSONObject(String(bytes, Charsets.UTF_8))
+                json.optString("school_title").ifBlank { null }
+                    ?: json.optString("school").ifBlank { null }
+                    ?: json.optString("org_name").ifBlank { null }
+                    ?: json.optString("vendor_title").ifBlank { null }
             } else null
         } catch (_: Exception) {
             null

@@ -12,12 +12,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.School
+import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -44,6 +46,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.pixelschool.app.data.model.ProfileUiState
 import com.pixelschool.app.data.model.UserSession
 import com.pixelschool.app.ui.navigation.Screen
 import com.pixelschool.app.ui.screens.AuthScreen
@@ -61,11 +64,13 @@ fun MainAppScreen(
     val session by viewModel.session.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
+    val errorState by viewModel.errorState.collectAsState()
+    val profileState by viewModel.profileState.collectAsState()
 
     if (session == null) {
         AuthScreen(
             onLoginDemo = { viewModel.loginDemo() },
-            onLoginWithSession = { auth, cookies, user -> viewModel.loginWithSession(auth, cookies, user) },
+            onLoginWithSession = { auth, cookies, user, school -> viewModel.loginWithSession(auth, cookies, user, school) },
             isLoading = isLoading,
             errorMessage = errorMessage
         )
@@ -112,7 +117,11 @@ fun MainAppScreen(
                     .fillMaxSize()
                     .padding(innerPadding)
             ) {
-                if (!errorMessage.isNullOrBlank()) {
+                if (errorState != null || !errorMessage.isNullOrBlank()) {
+                    val errMessage = errorState?.message ?: errorMessage ?: "Ошибка загрузки данных"
+                    val errCode = errorState?.errorCode
+                    val errDetails = errorState?.errorDetails
+
                     Surface(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -120,16 +129,56 @@ fun MainAppScreen(
                         shape = RoundedCornerShape(16.dp),
                         color = MaterialTheme.colorScheme.errorContainer
                     ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = errorMessage ?: "",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onErrorContainer,
-                                modifier = Modifier.weight(1f)
-                            )
+                        Column(modifier = Modifier.padding(14.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Warning,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onErrorContainer,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = errMessage,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = MaterialTheme.colorScheme.onErrorContainer
+                                    )
+                                }
+
+                                if (!errCode.isNullOrBlank()) {
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = MaterialTheme.colorScheme.error
+                                    ) {
+                                        Text(
+                                            text = errCode,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onError,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                            }
+
+                            if (!errDetails.isNullOrBlank()) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = errDetails,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.85f)
+                                )
+                            }
                         }
                     }
                 }
@@ -178,7 +227,7 @@ fun MainAppScreen(
                     }
                     Screen.Profile -> {
                         ProfileScreen(
-                            session = session,
+                            profile = profileState,
                             onLogout = { viewModel.logout() }
                         )
                     }
@@ -191,10 +240,19 @@ fun MainAppScreen(
 
 @Composable
 fun ProfileScreen(
-    session: UserSession?,
+    profile: ProfileUiState,
     onLogout: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val displayName = profile.fullName.ifBlank {
+        if (profile.lastName.isNotBlank() || profile.firstName.isNotBlank()) {
+            "${profile.lastName} ${profile.firstName}".trim()
+        } else {
+            "Ученик"
+        }
+    }
+    val displaySchool = profile.schoolName.ifBlank { "Республика Крым" }
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -219,7 +277,7 @@ fun ProfileScreen(
         Spacer(modifier = Modifier.height(16.dp))
 
         Text(
-            text = session?.userTitle?.ifBlank { "Ученик" } ?: "Ученик",
+            text = displayName,
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold
         )
@@ -227,12 +285,12 @@ fun ProfileScreen(
         Spacer(modifier = Modifier.height(6.dp))
 
         Text(
-            text = session?.schoolTitle?.ifBlank { "Республика Крым" } ?: "Республика Крым",
+            text = displaySchool,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
 
-        if (session?.isDemo == true) {
+        if (profile.isDemo) {
             Spacer(modifier = Modifier.height(10.dp))
             Surface(
                 shape = RoundedCornerShape(12.dp),

@@ -182,13 +182,13 @@ fun HomeworkScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(top = 2.dp)
+            .padding(top = 12.dp)
     ) {
         // Week Navigator Bar
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 2.dp),
+                .padding(horizontal = 16.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -265,7 +265,7 @@ fun HomeworkScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(4.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
         // Expressive Day Selector Tabs (Mon-Sat, strictly one day focused)
         Row(
@@ -326,7 +326,7 @@ fun HomeworkScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(4.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
         // Compact Progress Line for selected day
         Row(
@@ -354,7 +354,7 @@ fun HomeworkScreen(
             )
         }
 
-        Spacer(modifier = Modifier.height(2.dp))
+        Spacer(modifier = Modifier.height(8.dp))
 
         // M3 Canonical SingleChoiceSegmentedButtonRow
         val filterOptions = listOf(
@@ -389,7 +389,7 @@ fun HomeworkScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(6.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
         // Homework list for the strictly selected day
         AnimatedContent(
@@ -440,7 +440,7 @@ fun HomeworkScreen(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(horizontal = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     items(itemsList, key = { it.id }) { hw ->
                         HomeworkExpressiveCard(

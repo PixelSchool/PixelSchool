@@ -72,13 +72,13 @@ fun ScheduleScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(top = 2.dp)
+            .padding(top = 12.dp)
     ) {
         // Week Navigator Bar
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 2.dp),
+                .padding(horizontal = 16.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -151,7 +151,7 @@ fun ScheduleScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(4.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
         // Expressive Day Selector Tabs
         Row(
@@ -220,7 +220,7 @@ fun ScheduleScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(6.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
         if (selectedDay == null || selectedDay.isHoliday || selectedDay.lessons.isEmpty()) {
             Box(

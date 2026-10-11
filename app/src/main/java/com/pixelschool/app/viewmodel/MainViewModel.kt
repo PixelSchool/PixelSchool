@@ -4,7 +4,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.pixelschool.app.data.model.AcademicPeriod
 import com.pixelschool.app.data.model.DaySchedule
+import com.pixelschool.app.data.model.ErrorUiState
 import com.pixelschool.app.data.model.Homework
+import com.pixelschool.app.data.model.ProfileUiState
 import com.pixelschool.app.data.model.SubjectSummary
 import com.pixelschool.app.data.model.UserSession
 import com.pixelschool.app.data.remote.AuthCredentials
@@ -15,6 +17,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.util.Calendar
 
 class MainViewModel(
     private val repository: DiaryRepository
@@ -22,11 +25,17 @@ class MainViewModel(
 
     val session: StateFlow<UserSession?> = repository.session
 
+    private val _profileState = MutableStateFlow(ProfileUiState())
+    val profileState: StateFlow<ProfileUiState> = _profileState.asStateFlow()
+
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
+
+    private val _errorState = MutableStateFlow<ErrorUiState?>(null)
+    val errorState: StateFlow<ErrorUiState?> = _errorState.asStateFlow()
 
     private val _schedule = MutableStateFlow<List<DaySchedule>>(emptyList())
     val schedule: StateFlow<List<DaySchedule>> = _schedule.asStateFlow()
@@ -50,9 +59,65 @@ class MainViewModel(
     val marks: StateFlow<List<SubjectSummary>> = _marks.asStateFlow()
 
     init {
+        viewModelScope.launch {
+            repository.session.collect { s ->
+                updateProfile(s)
+            }
+        }
         if (session.value != null) {
             loadData()
         }
+    }
+
+    private fun updateProfile(s: UserSession?) {
+        if (s == null) {
+            _profileState.value = ProfileUiState()
+        } else {
+            val full = s.userTitle.takeIf { it.isNotBlank() && it != "Ученик" }
+                ?: if (s.lastName.isNotBlank() || s.firstName.isNotBlank()) "${s.lastName} ${s.firstName}".trim() else "Ученик"
+            val school = s.schoolName.takeIf { it.isNotBlank() && it != "Республика Крым" && it != "ГИС РК «Образование»" }
+                ?: s.schoolTitle.takeIf { it.isNotBlank() && it != "ГИС РК «Образование»" }
+                ?: "Республика Крым"
+            _profileState.value = ProfileUiState(
+                fullName = full,
+                firstName = s.firstName,
+                lastName = s.lastName,
+                schoolName = school,
+                studentId = s.studentId,
+                login = s.login,
+                isDemo = s.isDemo
+            )
+        }
+    }
+
+    fun clearError() {
+        _errorState.value = null
+        _errorMessage.value = null
+    }
+
+    private fun Throwable.toErrorUiState(fallbackMessage: String): ErrorUiState {
+        val msg = this.message ?: fallbackMessage
+        val code = when {
+            msg.contains("HTTP 404") -> "HTTP 404"
+            msg.contains("HTTP 401") -> "HTTP 401"
+            msg.contains("HTTP 403") -> "HTTP 403"
+            msg.contains("HTTP 500") -> "HTTP 500"
+            msg.contains("HTTP 502") -> "HTTP 502"
+            msg.contains("HTTP 503") -> "HTTP 503"
+            msg.contains("HTTP ") -> Regex("""HTTP \d+""").find(msg)?.value
+            else -> null
+        }
+        val details = when (this) {
+            is java.net.SocketTimeoutException -> "java.net.SocketTimeoutException: Превышено время ожидания сервера"
+            is java.net.UnknownHostException -> "java.net.UnknownHostException: Нет соединения с сетью"
+            is java.io.IOException -> "java.io.IOException: Ошибка сетевого соединения"
+            else -> this::class.java.simpleName + (if (!this.message.isNullOrBlank()) ": ${this.message}" else "")
+        }
+        return ErrorUiState(
+            message = fallbackMessage.ifBlank { msg },
+            errorCode = code,
+            errorDetails = details
+        )
     }
 
     fun loadData() {
@@ -69,7 +134,9 @@ class MainViewModel(
 
             _isLoading.value = true
             _errorMessage.value = null
+            _errorState.value = null
             var errorToDisplay: String? = null
+            var errorUiToDisplay: ErrorUiState? = null
 
             // Restore/verify student profile (name and school) if not fully loaded
             try {
@@ -83,6 +150,7 @@ class MainViewModel(
                 if (e is SessionExpiredException) {
                     repository.logout()
                     _errorMessage.value = e.message ?: "Сессия устарела. Требуется повторный вход."
+                    _errorState.value = e.toErrorUiState("Сессия устарела. Требуется повторный вход.")
                     _isLoading.value = false
                     return@launch
                 }
@@ -91,20 +159,26 @@ class MainViewModel(
                     _homework.value = emptyList()
                 }
                 errorToDisplay = e.message ?: "Не удалось загрузить дневник из региональной системы"
+                errorUiToDisplay = e.toErrorUiState("Не удалось загрузить дневник")
             }
 
             try {
                 val resolvedPeriods = repository.getPeriods()
                 _periods.value = resolvedPeriods
-                val activeIdx = resolvedPeriods.indexOfFirst { it.isActive }.takeIf { it >= 0 } ?: 0
-                _selectedPeriodIndex.value = activeIdx
 
-                val activeRange = resolvedPeriods.getOrNull(activeIdx)?.rangeDays
+                val nowMonth = Calendar.getInstance().get(Calendar.MONTH) // 8=Sep, 9=Oct, 10=Nov
+                val defaultIdx = if (nowMonth in 8..10) 0 else {
+                    resolvedPeriods.indexOfFirst { it.isActive }.takeIf { it >= 0 } ?: 0
+                }
+                _selectedPeriodIndex.value = defaultIdx
+
+                val activeRange = resolvedPeriods.getOrNull(defaultIdx)?.rangeDays
                 _marks.value = repository.getMarks(activeRange)
             } catch (e: Exception) {
                 if (e is SessionExpiredException) {
                     repository.logout()
                     _errorMessage.value = e.message ?: "Сессия устарела. Требуется повторный вход."
+                    _errorState.value = e.toErrorUiState("Сессия устарела. Требуется повторный вход.")
                     _isLoading.value = false
                     return@launch
                 }
@@ -113,10 +187,12 @@ class MainViewModel(
                 }
                 if (errorToDisplay == null) {
                     errorToDisplay = e.message ?: "Не удалось загрузить оценки"
+                    errorUiToDisplay = e.toErrorUiState("Не удалось загрузить оценки")
                 }
             }
 
             _errorMessage.value = errorToDisplay
+            _errorState.value = errorUiToDisplay
             _isLoading.value = false
         }
     }
@@ -147,6 +223,7 @@ class MainViewModel(
             val curSession = session.value ?: return@launch
             _isLoading.value = true
             _errorMessage.value = null
+            _errorState.value = null
             try {
                 _schedule.value = repository.getSchedule(newOffset)
                 _homework.value = repository.getHomework(newOffset)
@@ -154,6 +231,7 @@ class MainViewModel(
                 if (e is SessionExpiredException) {
                     repository.logout()
                     _errorMessage.value = e.message ?: "Сессия устарела. Требуется повторный вход."
+                    _errorState.value = e.toErrorUiState("Сессия устарела. Требуется повторный вход.")
                     return@launch
                 }
                 if (!curSession.isDemo) {
@@ -161,6 +239,7 @@ class MainViewModel(
                     _homework.value = emptyList()
                 }
                 _errorMessage.value = e.message ?: "Не удалось загрузить данные"
+                _errorState.value = e.toErrorUiState("Не удалось загрузить данные")
             } finally {
                 _isLoading.value = false
             }
@@ -174,6 +253,7 @@ class MainViewModel(
                 val curSession = session.value ?: return@launch
                 _isLoading.value = true
                 _errorMessage.value = null
+                _errorState.value = null
                 try {
                     val p = _periods.value[index]
                     _marks.value = repository.getMarks(p.rangeDays)
@@ -181,12 +261,14 @@ class MainViewModel(
                     if (e is SessionExpiredException) {
                         repository.logout()
                         _errorMessage.value = e.message ?: "Сессия устарела. Требуется повторный вход."
+                        _errorState.value = e.toErrorUiState("Сессия устарела. Требуется повторный вход.")
                         return@launch
                     }
                     if (!curSession.isDemo) {
                         _marks.value = emptyList()
                     }
                     _errorMessage.value = e.message ?: "Не удалось загрузить оценки"
+                    _errorState.value = e.toErrorUiState("Не удалось загрузить оценки")
                 } finally {
                     _isLoading.value = false
                 }
@@ -205,20 +287,28 @@ class MainViewModel(
         loadData()
     }
 
-    fun loginWithSession(auth: AuthCredentials?, cookies: String?, userName: String? = null) {
+    fun loginWithSession(
+        auth: AuthCredentials?,
+        cookies: String?,
+        userName: String? = null,
+        schoolName: String? = null
+    ) {
         viewModelScope.launch {
             _isLoading.value = true
             _errorMessage.value = null
+            _errorState.value = null
             _schedule.value = emptyList()
             _homework.value = emptyList()
             _marks.value = emptyList()
             _periods.value = emptyList()
 
-            val res = repository.loginWithSession(auth, cookies, userName)
+            val res = repository.loginWithSession(auth, cookies, userName, schoolName)
             if (res.isSuccess) {
                 loadData()
             } else {
-                _errorMessage.value = res.exceptionOrNull()?.message ?: "Не удалось авторизоваться"
+                val ex = res.exceptionOrNull() ?: Exception("Не удалось авторизоваться")
+                _errorMessage.value = ex.message ?: "Не удалось авторизоваться"
+                _errorState.value = ex.toErrorUiState("Не удалось авторизоваться")
                 _isLoading.value = false
             }
         }

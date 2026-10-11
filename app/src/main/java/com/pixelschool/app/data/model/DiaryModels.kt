@@ -7,7 +7,28 @@ data class UserSession(
     val userTitle: String = "",
     val schoolTitle: String = "",
     val isDemo: Boolean = false,
-    val studentId: String = ""
+    val studentId: String = "",
+    val firstName: String = "",
+    val lastName: String = "",
+    val schoolName: String = ""
+)
+
+data class ErrorUiState(
+    val message: String = "Не удалось загрузить данные",
+    val errorCode: String? = null,
+    val errorDetails: String? = null
+)
+
+data class ProfileUiState(
+    val userTitle: String = "Ученик",
+    val schoolTitle: String = "Республика Крым",
+    val firstName: String = "",
+    val lastName: String = "",
+    val schoolName: String = "",
+    val studentId: String = "",
+    val isDemo: Boolean = false,
+    val login: String = "",
+    val fullName: String = userTitle
 )
 
 enum class AttachmentType {
