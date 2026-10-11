@@ -63,3 +63,13 @@ data class SubjectSummary(
     val marks: List<Mark> = emptyList(),
     val finalMark: String? = null
 )
+
+@Serializable
+data class AcademicPeriod(
+    val id: String,              // "1"
+    val title: String,           // "1 четверть"
+    val start: String,           // "20260901"
+    val end: String,             // "20261026"
+    val rangeDays: String,       // "20260901-20261026"
+    val isActive: Boolean = false
+)
