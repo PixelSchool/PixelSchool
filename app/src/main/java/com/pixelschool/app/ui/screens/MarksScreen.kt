@@ -21,6 +21,7 @@ import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -28,7 +29,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -39,8 +42,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.pixelschool.app.data.model.AcademicPeriod
+import com.pixelschool.app.data.model.PeriodMarks
 import com.pixelschool.app.data.model.SubjectSummary
 import com.pixelschool.app.ui.components.ExpressiveGradeBadge
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -54,64 +59,100 @@ fun MarksScreen(
     var selectedSubject by remember { mutableStateOf<SubjectSummary?>(null) }
     val sheetState = rememberModalBottomSheetState()
 
-    val overallAverage = if (subjects.isNotEmpty()) {
-        val allAverages = subjects.map { it.average }.filter { it > 0 }
-        if (allAverages.isNotEmpty()) allAverages.average().toFloat() else 0f
-    } else 0f
+    val periodTitles = remember(periods) {
+        if (periods.isNotEmpty()) {
+            periods.map { it.title }
+        } else {
+            listOf("1 четверть", "2 четверть", "3 четверть", "4 четверть")
+        }
+    }
+    val allTabs = remember(periodTitles) { periodTitles + "За год" }
 
-    val totalMarksCount = subjects.sumOf { it.marks.size }
+    var selectedTabIndex by remember {
+        mutableIntStateOf(selectedPeriodIndex.coerceIn(0, periodTitles.lastIndex))
+    }
+
+    LaunchedEffect(selectedPeriodIndex) {
+        if (selectedTabIndex < periodTitles.size && selectedPeriodIndex in periodTitles.indices) {
+            selectedTabIndex = selectedPeriodIndex
+        }
+    }
+
+    val isYearTab = selectedTabIndex == allTabs.lastIndex
+
+    val displayedSubjects = remember(subjects, selectedTabIndex, isYearTab) {
+        if (isYearTab) {
+            subjects
+        } else {
+            subjects.map { s ->
+                if (s.periodMarks.isNotEmpty() && selectedTabIndex < s.periodMarks.size) {
+                    val pm = s.periodMarks[selectedTabIndex]
+                    s.copy(average = pm.average, marks = pm.marks, finalMark = pm.finalMark)
+                } else {
+                    s
+                }
+            }
+        }
+    }
+
+    val overallAverage = remember(displayedSubjects) {
+        if (displayedSubjects.isNotEmpty()) {
+            val allAverages = displayedSubjects.map { it.average }.filter { it > 0 }
+            if (allAverages.isNotEmpty()) allAverages.average().toFloat() else 0f
+        } else 0f
+    }
+
+    val totalMarksCount = remember(displayedSubjects) {
+        displayedSubjects.sumOf { it.marks.size }
+    }
 
     Column(
         modifier = modifier
             .fillMaxSize()
             .padding(16.dp)
     ) {
-        // Academic Period Selector Tabs
-        if (periods.isNotEmpty()) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                periods.forEachIndexed { index, period ->
-                    val isSelected = index == selectedPeriodIndex
-                    Surface(
-                        shape = RoundedCornerShape(18.dp),
-                        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHighest,
-                        modifier = Modifier.clickable { onSelectPeriod(index) }
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Text(
-                                text = period.title,
-                                style = MaterialTheme.typography.labelLarge,
-                                color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
-                                fontWeight = FontWeight.Bold
-                            )
-                            if (period.start.length == 8 && period.end.length == 8) {
-                                Spacer(modifier = Modifier.height(2.dp))
-                                val d1 = "${period.start.substring(6, 8)}.${period.start.substring(4, 6)}"
-                                val d2 = "${period.end.substring(6, 8)}.${period.end.substring(4, 6)}"
-                                Text(
-                                    text = "$d1 – $d2",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = if (isSelected) MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f) else MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+        // Compact Academic Period Selector Tabs
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            allTabs.forEachIndexed { index, title ->
+                val isSelected = index == selectedTabIndex
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHighest,
+                    modifier = Modifier
+                        .height(36.dp)
+                        .clickable {
+                            selectedTabIndex = index
+                            if (index < periodTitles.size) {
+                                onSelectPeriod(index)
                             }
                         }
+                ) {
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
+                    ) {
+                        Text(
+                            text = title,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 }
             }
-            Spacer(modifier = Modifier.height(16.dp))
         }
+
+        Spacer(modifier = Modifier.height(12.dp))
 
         // Hero Overall GPA Card
         Card(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(28.dp),
+            shape = RoundedCornerShape(24.dp),
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.primaryContainer
             )
@@ -119,19 +160,19 @@ fun MarksScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(24.dp),
+                    .padding(20.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column {
                     Text(
-                        text = "Средний балл",
+                        text = if (isYearTab) "Годовой средний балл" else "Средний балл",
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onPrimaryContainer
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = String.format("%.2f", overallAverage),
+                        text = if (overallAverage > 0f) String.format(Locale.US, "%.2f", overallAverage) else "—",
                         style = MaterialTheme.typography.displayMedium,
                         fontWeight = FontWeight.Black,
                         color = MaterialTheme.colorScheme.onPrimaryContainer
@@ -145,12 +186,12 @@ fun MarksScreen(
                 }
 
                 Surface(
-                    shape = RoundedCornerShape(20.dp),
+                    shape = RoundedCornerShape(18.dp),
                     color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(8.dp)
+                    modifier = Modifier.padding(4.dp)
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
@@ -161,7 +202,7 @@ fun MarksScreen(
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = if (overallAverage >= 4.5f) "Отлично" else if (overallAverage >= 3.6f) "Хорошо" else "Внимание",
+                            text = if (overallAverage >= 4.5f) "Отлично" else if (overallAverage >= 3.6f) "Хорошо" else if (overallAverage > 0f) "Внимание" else "Нет данных",
                             style = MaterialTheme.typography.labelLarge,
                             color = MaterialTheme.colorScheme.onPrimary,
                             fontWeight = FontWeight.Bold
@@ -171,17 +212,17 @@ fun MarksScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(20.dp))
+        Spacer(modifier = Modifier.height(16.dp))
 
         Text(
-            text = "Предметы",
+            text = if (isYearTab) "Ведомость за год" else "Предметы",
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold
         )
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(10.dp))
 
-        if (subjects.isEmpty()) {
+        if (displayedSubjects.isEmpty()) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -227,11 +268,20 @@ fun MarksScreen(
                 modifier = Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                items(subjects, key = { it.subject }) { item ->
-                    SubjectMarkCard(
-                        summary = item,
-                        onClick = { selectedSubject = item }
-                    )
+                if (isYearTab) {
+                    items(displayedSubjects, key = { it.subject }) { item ->
+                        YearlySubjectCard(
+                            summary = item,
+                            onClick = { selectedSubject = item }
+                        )
+                    }
+                } else {
+                    items(displayedSubjects, key = { it.subject }) { item ->
+                        SubjectMarkCard(
+                            summary = item,
+                            onClick = { selectedSubject = item }
+                        )
+                    }
                 }
                 item {
                     Spacer(modifier = Modifier.height(80.dp))
@@ -264,67 +314,268 @@ fun MarksScreen(
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "Средний: ${String.format("%.2f", subject.average)}",
+                            text = if (subject.average > 0f) "Средний: ${String.format(Locale.US, "%.2f", subject.average)}" else "Оценок нет",
                             style = MaterialTheme.typography.titleMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    ExpressiveGradeBadge(
-                        value = if (subject.average >= 4.5f) "5" else if (subject.average >= 3.5f) "4" else "3",
-                        isLarge = true
-                    )
+                    if (subject.average > 0f) {
+                        ExpressiveGradeBadge(
+                            value = if (subject.average >= 4.5f) "5" else if (subject.average >= 3.5f) "4" else if (subject.average >= 2.5f) "3" else "2",
+                            isLarge = true
+                        )
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(20.dp))
 
                 Text(
-                    text = "Все оценки за период:",
+                    text = if (isYearTab) "Оценки по четвертям:" else "Все оценки за период:",
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold
                 )
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    subject.marks.forEach { mark ->
-                        Surface(
-                            shape = RoundedCornerShape(16.dp),
-                            color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(14.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
+                if (isYearTab && subject.periodMarks.isNotEmpty()) {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        subject.periodMarks.forEach { pm ->
+                            Surface(
+                                shape = RoundedCornerShape(16.dp),
+                                color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f),
+                                modifier = Modifier.fillMaxWidth()
                             ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    ExpressiveGradeBadge(value = mark.value)
-                                    Spacer(modifier = Modifier.width(12.dp))
-                                    Column {
+                                Column(modifier = Modifier.padding(14.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
                                         Text(
-                                            text = mark.comment ?: if (mark.isControl) "Контрольная работа" else "Ответ на уроке",
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            fontWeight = FontWeight.Medium
+                                            text = pm.periodName,
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold
                                         )
-                                        if (mark.weight > 1) {
+                                        if (pm.average > 0f) {
                                             Text(
-                                                text = "Вес оценки: x${mark.weight}",
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = MaterialTheme.colorScheme.outline
+                                                text = "ср. ${String.format(Locale.US, "%.2f", pm.average)}",
+                                                style = MaterialTheme.typography.labelMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.primary
                                             )
                                         }
                                     }
+                                    if (pm.marks.isNotEmpty()) {
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .horizontalScroll(rememberScrollState()),
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            pm.marks.forEach { mark ->
+                                                ExpressiveGradeBadge(value = mark.value)
+                                            }
+                                        }
+                                    } else {
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text(
+                                            text = "Нет оценок",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.outline
+                                        )
+                                    }
                                 }
-                                Text(
-                                    text = mark.date,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
                             }
                         }
                     }
+                } else if (subject.marks.isNotEmpty()) {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        subject.marks.forEach { mark ->
+                            Surface(
+                                shape = RoundedCornerShape(16.dp),
+                                color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(14.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        ExpressiveGradeBadge(value = mark.value)
+                                        Spacer(modifier = Modifier.width(12.dp))
+                                        Column {
+                                            Text(
+                                                text = mark.comment ?: if (mark.isControl) "Контрольная работа" else "Ответ на уроке",
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontWeight = FontWeight.Medium
+                                            )
+                                            if (mark.weight > 1) {
+                                                Text(
+                                                    text = "Вес оценки: x${mark.weight}",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.outline
+                                                )
+                                            }
+                                        }
+                                    }
+                                    Text(
+                                        text = mark.date,
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    Text(
+                        text = "Оценки отсутствуют",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
                 Spacer(modifier = Modifier.height(30.dp))
+            }
+        }
+    }
+}
+
+@Composable
+fun YearlySubjectCard(
+    summary: SubjectSummary,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(22.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f)
+        )
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            // Header: Subject name & Yearly average / final mark
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = summary.subject,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f)
+                )
+
+                Spacer(modifier = Modifier.width(8.dp))
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    if (!summary.finalMark.isNullOrBlank()) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer
+                        ) {
+                            Text(
+                                text = "Итог: ${summary.finalMark}",
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+                    }
+
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant
+                    ) {
+                        Text(
+                            text = if (summary.average > 0f) String.format(Locale.US, "%.2f", summary.average) else "—",
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Black
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            val quarters = if (summary.periodMarks.isNotEmpty()) {
+                summary.periodMarks
+            } else {
+                listOf(
+                    PeriodMarks("1", "1 четверть", summary.marks, summary.average)
+                )
+            }
+
+            quarters.forEachIndexed { qIndex, period ->
+                if (qIndex > 0) {
+                    HorizontalDivider(
+                        modifier = Modifier.padding(vertical = 8.dp),
+                        thickness = 0.5.dp,
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+                    )
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        modifier = Modifier.weight(1f, fill = false),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f)
+                        ) {
+                            Text(
+                                text = period.periodName,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                        }
+
+                        if (period.marks.isNotEmpty()) {
+                            Row(
+                                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                period.marks.forEach { mark ->
+                                    ExpressiveGradeBadge(value = mark.value)
+                                }
+                            }
+                        } else {
+                            Text(
+                                text = "Нет оценок",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.outline
+                            )
+                        }
+                    }
+
+                    if (period.average > 0f) {
+                        Text(
+                            text = "ср. ${String.format(Locale.US, "%.2f", period.average)}",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(start = 8.dp)
+                        )
+                    }
+                }
             }
         }
     }
@@ -365,7 +616,7 @@ fun SubjectMarkCard(
                     color = MaterialTheme.colorScheme.surfaceVariant
                 ) {
                     Text(
-                        text = String.format("%.2f", summary.average),
+                        text = if (summary.average > 0f) String.format(Locale.US, "%.2f", summary.average) else "—",
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.Black

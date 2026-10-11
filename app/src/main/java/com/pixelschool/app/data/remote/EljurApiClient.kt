@@ -3,9 +3,12 @@ package com.pixelschool.app.data.remote
 import android.net.Uri
 import android.util.Log
 import com.pixelschool.app.data.model.AcademicPeriod
+import com.pixelschool.app.data.model.Attachment
+import com.pixelschool.app.data.model.AttachmentType
 import com.pixelschool.app.data.model.DaySchedule
 import com.pixelschool.app.data.model.Lesson
 import com.pixelschool.app.data.model.Mark
+import com.pixelschool.app.data.model.PeriodMarks
 import com.pixelschool.app.data.model.SubjectSummary
 import com.pixelschool.app.data.model.UserSession
 import kotlinx.coroutines.Dispatchers
@@ -457,8 +460,9 @@ class EljurApiClient(
     fun getWeekRangeForOffset(weekOffset: Int = 0, baseDate: Date = Date()): String {
         val cal = Calendar.getInstance(Locale.getDefault())
         cal.time = baseDate
-        if (weekOffset != 0) {
-            cal.add(Calendar.WEEK_OF_YEAR, weekOffset)
+        val calendarDelta = -weekOffset // week.-1 is next week (+1), week.1 is prev week (-1)
+        if (calendarDelta != 0) {
+            cal.add(Calendar.WEEK_OF_YEAR, calendarDelta)
         }
         val dayOfWeek = cal.get(Calendar.DAY_OF_WEEK)
         val daysFromMonday = if (dayOfWeek == Calendar.SUNDAY) 6 else dayOfWeek - Calendar.MONDAY
@@ -473,8 +477,9 @@ class EljurApiClient(
     fun getMondayDateForOffset(weekOffset: Int = 0, baseDate: Date = Date()): String {
         val cal = Calendar.getInstance(Locale.getDefault())
         cal.time = baseDate
-        if (weekOffset != 0) {
-            cal.add(Calendar.WEEK_OF_YEAR, weekOffset)
+        val calendarDelta = -weekOffset
+        if (calendarDelta != 0) {
+            cal.add(Calendar.WEEK_OF_YEAR, calendarDelta)
         }
         val dayOfWeek = cal.get(Calendar.DAY_OF_WEEK)
         val daysFromMonday = if (dayOfWeek == Calendar.SUNDAY) 6 else dayOfWeek - Calendar.MONDAY
@@ -1096,7 +1101,8 @@ class EljurApiClient(
                     subject = name,
                     average = effectiveAvg,
                     marks = marksList,
-                    finalMark = finalMark
+                    finalMark = finalMark,
+                    periodMarks = groupMarksIntoPeriods(marksList, finalMark)
                 )
             )
         }
@@ -1457,14 +1463,16 @@ class EljurApiClient(
                         subject = subjectName,
                         average = bestAvg,
                         marks = mergedMarks,
-                        finalMark = bestFinal
+                        finalMark = bestFinal,
+                        periodMarks = groupMarksIntoPeriods(mergedMarks, bestFinal)
                     )
                 } else {
                     subjectMap[subjectName] = SubjectSummary(
                         subject = subjectName,
                         average = avgFloat,
                         marks = marks,
-                        finalMark = finalMark
+                        finalMark = finalMark,
+                        periodMarks = groupMarksIntoPeriods(marks, finalMark)
                     )
                 }
             }
@@ -1678,6 +1686,7 @@ class EljurApiClient(
                     }
                 }
 
+                val (cleanHw, attachments) = AttachmentExtractor.extract(homeworkText)
                 lessons.add(
                     Lesson(
                         num = num,
@@ -1687,8 +1696,9 @@ class EljurApiClient(
                         room = room,
                         teacher = teacher,
                         topic = if (topic.isNotEmpty()) topic else null,
-                        homework = homeworkText,
-                        marks = marksList
+                        homework = cleanHw,
+                        marks = marksList,
+                        attachments = attachments
                     )
                 )
             }
@@ -1719,22 +1729,19 @@ class EljurApiClient(
             val targetDate = getMondayDateForOffset(weekOffset)
 
             val candidateUrls = mutableListOf<String>()
-            if (weekOffset == 0) {
-                if (!cleanStudent.isNullOrBlank()) {
-                    candidateUrls.add("$baseUrl/journal-app/u.$cleanStudent")
-                }
-                candidateUrls.add("$baseUrl/journal-app")
-            }
+            val mainUrl = if (weekOffset == 0) "$baseUrl/journal-app" else "$baseUrl/journal-app/week.$weekOffset"
 
             if (!cleanStudent.isNullOrBlank()) {
-                candidateUrls.add("$baseUrl/journal-app/u.$cleanStudent?date=$targetDate")
-                candidateUrls.add("$baseUrl/journal-app/week.$weekOffset/u.$cleanStudent")
-                candidateUrls.add("$baseUrl/journal-student-diary-action/u.$cleanStudent?date=$targetDate")
+                candidateUrls.add("$mainUrl/u.$cleanStudent")
             }
+            candidateUrls.add(mainUrl)
+
+            val diaryActionUrl = if (weekOffset == 0) "$baseUrl/journal-student-diary-action" else "$baseUrl/journal-student-diary-action/week.$weekOffset"
+            if (!cleanStudent.isNullOrBlank()) {
+                candidateUrls.add("$diaryActionUrl/u.$cleanStudent")
+            }
+            candidateUrls.add(diaryActionUrl)
             candidateUrls.add("$baseUrl/journal-app?date=$targetDate")
-            candidateUrls.add("$baseUrl/journal-app/week.$weekOffset")
-            candidateUrls.add("$baseUrl/journal-student-diary-action?date=$targetDate")
-            candidateUrls.add("$baseUrl/journal-schedule-action?date=$targetDate")
 
             for (targetUrl in candidateUrls) {
                 val request = buildRequest(targetUrl, cookies, isJson = false)
@@ -1816,7 +1823,9 @@ class EljurApiClient(
 
                 val teacher = lElem.selectFirst(".dnevnik-lesson__teacher, .lesson-teacher, .teacher, .fio, td.teacher")?.text()?.trim() ?: ""
                 val topic = lElem.selectFirst(".dnevnik-lesson__topic, .lesson-topic, .topic, .theme, td.topic")?.text()?.trim()
-                val task = lElem.selectFirst(".dnevnik-lesson__task, .lesson-task, .homework-text, .task-description, .homework, .task, .hometask, td.task")?.text()?.trim()
+                val taskElem = lElem.selectFirst(".dnevnik-lesson__task, .lesson-task, .homework-text, .task-description, .homework, .task, .hometask, td.task")
+                val rawTaskHtml = taskElem?.html() ?: taskElem?.text() ?: ""
+                val (cleanTask, attachments) = AttachmentExtractor.extract(rawTaskHtml)
 
                 val markElems = lElem.select(".dnevnik-mark, .mark-badge, .grade, .lesson-mark, .mark, span.cell-mark, .mark_val, .badge")
                 val marks = mutableListOf<Mark>()
@@ -1850,8 +1859,9 @@ class EljurApiClient(
                         room = roomText,
                         teacher = teacher,
                         topic = topic?.takeIf { it.isNotBlank() },
-                        homework = task?.takeIf { it.isNotBlank() },
-                        marks = marks
+                        homework = cleanTask?.takeIf { it.isNotBlank() },
+                        marks = marks,
+                        attachments = attachments
                     )
                 )
             }
@@ -1906,5 +1916,136 @@ class EljurApiClient(
             }
         }
         return emptyList()
+    }
+
+    fun groupMarksIntoPeriods(allMarks: List<Mark>, subjectFinalMark: String? = null): List<PeriodMarks> {
+        val q1Marks = mutableListOf<Mark>()
+        val q2Marks = mutableListOf<Mark>()
+        val q3Marks = mutableListOf<Mark>()
+        val q4Marks = mutableListOf<Mark>()
+
+        for (m in allMarks) {
+            val month = extractMonthFromDate(m.date)
+            when (month) {
+                9, 10 -> q1Marks.add(m)
+                11, 12 -> q2Marks.add(m)
+                1, 2, 3 -> q3Marks.add(m)
+                4, 5, 6 -> q4Marks.add(m)
+                else -> {
+                    q1Marks.add(m)
+                }
+            }
+        }
+
+        fun calcAvg(marks: List<Mark>): Float {
+            val numMarks = marks.filter { it.numericValue != null }
+            val totalWeight = numMarks.sumOf { it.weight }
+            return if (totalWeight > 0) {
+                (numMarks.sumOf { ((it.numericValue ?: 0f) * it.weight).toDouble() } / totalWeight).toFloat()
+            } else 0f
+        }
+
+        return listOf(
+            PeriodMarks("1", "1 четверть", q1Marks, calcAvg(q1Marks), null),
+            PeriodMarks("2", "2 четверть", q2Marks, calcAvg(q2Marks), null),
+            PeriodMarks("3", "3 четверть", q3Marks, calcAvg(q3Marks), null),
+            PeriodMarks("4", "4 четверть", q4Marks, calcAvg(q4Marks), subjectFinalMark)
+        )
+    }
+
+    private fun extractMonthFromDate(dateStr: String): Int {
+        if (dateStr.isBlank()) return 0
+        val parts = dateStr.split(".")
+        return if (parts.size >= 2) {
+            parts[1].toIntOrNull() ?: 0
+        } else {
+            Regex("""\.(\d{2})""").find(dateStr)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+        }
+    }
+}
+
+object AttachmentExtractor {
+    private const val BASE_URL = "https://edu.rk.gov.ru"
+    private val URL_REGEX = Regex("""https?://[^\s<>"]+""")
+
+    fun extract(rawHtmlOrText: String?): Pair<String?, List<Attachment>> {
+        if (rawHtmlOrText.isNullOrBlank()) return null to emptyList()
+
+        val attachments = mutableListOf<Attachment>()
+        val seenUrls = mutableSetOf<String>()
+
+        if (rawHtmlOrText.contains("<") && rawHtmlOrText.contains(">")) {
+            try {
+                val doc = Jsoup.parseBodyFragment(rawHtmlOrText)
+                for (a in doc.select("a[href]")) {
+                    var href = a.attr("href").trim()
+                    val text = a.text().trim()
+                    if (href.startsWith("/storage/")) {
+                        href = "$BASE_URL$href"
+                    }
+                    if (href.isNotBlank() && !seenUrls.contains(href)) {
+                        seenUrls.add(href)
+                        val isFile = href.contains("/storage/") ||
+                                href.contains("/files/") ||
+                                href.contains("/download") ||
+                                href.endsWith(".pdf", true) ||
+                                href.endsWith(".doc", true) ||
+                                href.endsWith(".docx", true) ||
+                                href.endsWith(".xls", true) ||
+                                href.endsWith(".xlsx", true) ||
+                                href.endsWith(".ppt", true) ||
+                                href.endsWith(".pptx", true) ||
+                                href.endsWith(".zip", true)
+                        val type = if (isFile) AttachmentType.FILE else AttachmentType.LINK
+                        val title = if (text.isNotBlank() && !text.startsWith("http")) {
+                            text
+                        } else if (isFile) {
+                            href.substringAfterLast('/').substringBefore('?').ifBlank { "Файл к уроку" }
+                        } else {
+                            extractDomain(href)
+                        }
+                        attachments.add(Attachment(title = title, url = href, type = type))
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+
+        for (match in URL_REGEX.findAll(rawHtmlOrText)) {
+            val url = match.value.trimEnd('.', ',', ';', ')')
+            if (!seenUrls.contains(url)) {
+                seenUrls.add(url)
+                val isFile = url.contains("/storage/") ||
+                        url.contains("/files/") ||
+                        url.endsWith(".pdf", true) ||
+                        url.endsWith(".docx", true) ||
+                        url.endsWith(".doc", true) ||
+                        url.endsWith(".zip", true)
+                val type = if (isFile) AttachmentType.FILE else AttachmentType.LINK
+                val title = if (isFile) {
+                    url.substringAfterLast('/').substringBefore('?').ifBlank { "Файл к уроку" }
+                } else {
+                    extractDomain(url)
+                }
+                attachments.add(Attachment(title = title, url = url, type = type))
+            }
+        }
+
+        val clean = if (rawHtmlOrText.contains("<") && rawHtmlOrText.contains(">")) {
+            Jsoup.parseBodyFragment(rawHtmlOrText).text().trim()
+        } else {
+            rawHtmlOrText.trim()
+        }
+
+        return (clean.ifBlank { null }) to attachments
+    }
+
+    private fun extractDomain(url: String): String {
+        return try {
+            val uri = java.net.URI(url)
+            val host = uri.host ?: url
+            host.removePrefix("www.")
+        } catch (_: Exception) {
+            url.take(25)
+        }
     }
 }
