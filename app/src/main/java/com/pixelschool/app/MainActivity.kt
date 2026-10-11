@@ -21,9 +21,18 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         val sessionStore = SessionStore(applicationContext)
+        val cacheStore = com.pixelschool.app.data.local.CacheStore(applicationContext)
         val apiClient = EljurApiClient()
-        val repository = DiaryRepository(sessionStore, apiClient)
+        val repository = DiaryRepository(sessionStore, apiClient, cacheStore, applicationContext)
         val viewModel = MainViewModel(repository)
+
+        // Init Notification Channel & Request Permission on Android 13+
+        com.pixelschool.app.notification.NotificationHelper.createNotificationChannel(applicationContext)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 101)
+            }
+        }
 
         setContent {
             PixelSchoolTheme {

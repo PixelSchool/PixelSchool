@@ -316,7 +316,16 @@ fun MarksScreen(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(20.dp))
+                if (!isYearTab && subject.marks.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    com.pixelschool.app.ui.components.GradeCalculatorCard(
+                        marks = subject.marks,
+                        currentAverage = subject.average
+                    )
+                    Spacer(modifier = Modifier.height(20.dp))
+                } else {
+                    Spacer(modifier = Modifier.height(20.dp))
+                }
 
                 Text(
                     text = if (isYearTab) "Оценки по четвертям:" else "Все оценки за период:",
