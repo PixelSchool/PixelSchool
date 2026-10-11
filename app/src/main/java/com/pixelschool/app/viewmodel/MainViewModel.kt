@@ -45,15 +45,32 @@ class MainViewModel(
         viewModelScope.launch {
             _isLoading.value = true
             _errorMessage.value = null
+            var errorToDisplay: String? = null
+
             try {
                 _schedule.value = repository.getSchedule()
+            } catch (e: Exception) {
+                errorToDisplay = e.message
+            }
+
+            try {
                 _homework.value = repository.getHomework()
+            } catch (e: Exception) {
+                if (errorToDisplay == null) errorToDisplay = e.message
+            }
+
+            try {
                 _marks.value = repository.getMarks()
             } catch (e: Exception) {
-                _errorMessage.value = e.message ?: "Ошибка загрузки данных"
-            } finally {
-                _isLoading.value = false
+                if (errorToDisplay == null) errorToDisplay = e.message
             }
+
+            if (_schedule.value.isEmpty() && _homework.value.isEmpty() && _marks.value.isEmpty()) {
+                _errorMessage.value = errorToDisplay ?: "Не удалось загрузить данные из региональной системы"
+            } else {
+                _errorMessage.value = null
+            }
+            _isLoading.value = false
         }
     }
 
