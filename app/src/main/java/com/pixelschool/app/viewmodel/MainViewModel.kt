@@ -2,6 +2,7 @@ package com.pixelschool.app.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.pixelschool.app.data.model.AcademicPeriod
 import com.pixelschool.app.data.model.DaySchedule
 import com.pixelschool.app.data.model.Homework
 import com.pixelschool.app.data.model.SubjectSummary
@@ -31,8 +32,17 @@ class MainViewModel(
     private val _selectedDayIndex = MutableStateFlow(0)
     val selectedDayIndex: StateFlow<Int> = _selectedDayIndex.asStateFlow()
 
+    private val _currentWeekOffset = MutableStateFlow(0)
+    val currentWeekOffset: StateFlow<Int> = _currentWeekOffset.asStateFlow()
+
     private val _homework = MutableStateFlow<List<Homework>>(emptyList())
     val homework: StateFlow<List<Homework>> = _homework.asStateFlow()
+
+    private val _periods = MutableStateFlow<List<AcademicPeriod>>(emptyList())
+    val periods: StateFlow<List<AcademicPeriod>> = _periods.asStateFlow()
+
+    private val _selectedPeriodIndex = MutableStateFlow(0)
+    val selectedPeriodIndex: StateFlow<Int> = _selectedPeriodIndex.asStateFlow()
 
     private val _marks = MutableStateFlow<List<SubjectSummary>>(emptyList())
     val marks: StateFlow<List<SubjectSummary>> = _marks.asStateFlow()
@@ -48,19 +58,25 @@ class MainViewModel(
             var errorToDisplay: String? = null
 
             try {
-                _schedule.value = repository.getSchedule()
+                _schedule.value = repository.getSchedule(_currentWeekOffset.value)
             } catch (e: Exception) {
                 errorToDisplay = e.message
             }
 
             try {
-                _homework.value = repository.getHomework()
+                _homework.value = repository.getHomework(_currentWeekOffset.value)
             } catch (e: Exception) {
                 if (errorToDisplay == null) errorToDisplay = e.message
             }
 
             try {
-                _marks.value = repository.getMarks()
+                val resolvedPeriods = repository.getPeriods()
+                _periods.value = resolvedPeriods
+                val activeIdx = resolvedPeriods.indexOfFirst { it.isActive }.takeIf { it >= 0 } ?: 0
+                _selectedPeriodIndex.value = activeIdx
+
+                val activeRange = resolvedPeriods.getOrNull(activeIdx)?.rangeDays
+                _marks.value = repository.getMarks(activeRange)
             } catch (e: Exception) {
                 if (errorToDisplay == null) errorToDisplay = e.message
             }
@@ -77,6 +93,40 @@ class MainViewModel(
     fun selectDay(index: Int) {
         if (index in 0 until _schedule.value.size) {
             _selectedDayIndex.value = index
+        }
+    }
+
+    fun changeWeekOffset(offsetDelta: Int) {
+        val newOffset = _currentWeekOffset.value + offsetDelta
+        _currentWeekOffset.value = newOffset
+        _selectedDayIndex.value = 0
+        viewModelScope.launch {
+            _isLoading.value = true
+            try {
+                _schedule.value = repository.getSchedule(newOffset)
+                _homework.value = repository.getHomework(newOffset)
+            } catch (e: Exception) {
+                _errorMessage.value = e.message
+            } finally {
+                _isLoading.value = false
+            }
+        }
+    }
+
+    fun selectPeriod(index: Int) {
+        if (index in 0 until _periods.value.size) {
+            _selectedPeriodIndex.value = index
+            viewModelScope.launch {
+                _isLoading.value = true
+                try {
+                    val p = _periods.value[index]
+                    _marks.value = repository.getMarks(p.rangeDays)
+                } catch (e: Exception) {
+                    _errorMessage.value = e.message
+                } finally {
+                    _isLoading.value = false
+                }
+            }
         }
     }
 
@@ -110,5 +160,7 @@ class MainViewModel(
         _schedule.value = emptyList()
         _homework.value = emptyList()
         _marks.value = emptyList()
+        _periods.value = emptyList()
+        _currentWeekOffset.value = 0
     }
 }

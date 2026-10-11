@@ -159,10 +159,13 @@ fun MainAppScreen(
                     Screen.Schedule -> {
                         val schedule by viewModel.schedule.collectAsState()
                         val selectedDayIndex by viewModel.selectedDayIndex.collectAsState()
+                        val currentWeekOffset by viewModel.currentWeekOffset.collectAsState()
                         ScheduleScreen(
                             schedule = schedule,
                             selectedDayIndex = selectedDayIndex,
-                            onSelectDay = { viewModel.selectDay(it) }
+                            onSelectDay = { viewModel.selectDay(it) },
+                            weekOffset = currentWeekOffset,
+                            onChangeWeekOffset = { viewModel.changeWeekOffset(it) }
                         )
                     }
                     Screen.Homework -> {
@@ -174,7 +177,14 @@ fun MainAppScreen(
                     }
                     Screen.Marks -> {
                         val marks by viewModel.marks.collectAsState()
-                        MarksScreen(subjects = marks)
+                        val periods by viewModel.periods.collectAsState()
+                        val selectedPeriodIndex by viewModel.selectedPeriodIndex.collectAsState()
+                        MarksScreen(
+                            subjects = marks,
+                            periods = periods,
+                            selectedPeriodIndex = selectedPeriodIndex,
+                            onSelectPeriod = { viewModel.selectPeriod(it) }
+                        )
                     }
                     Screen.Profile -> {
                         ProfileScreen(

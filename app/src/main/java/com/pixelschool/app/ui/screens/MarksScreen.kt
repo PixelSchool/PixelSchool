@@ -35,8 +35,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.pixelschool.app.data.model.AcademicPeriod
 import com.pixelschool.app.data.model.SubjectSummary
 import com.pixelschool.app.ui.components.ExpressiveGradeBadge
 
@@ -44,6 +46,9 @@ import com.pixelschool.app.ui.components.ExpressiveGradeBadge
 @Composable
 fun MarksScreen(
     subjects: List<SubjectSummary>,
+    periods: List<AcademicPeriod> = emptyList(),
+    selectedPeriodIndex: Int = 0,
+    onSelectPeriod: (Int) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var selectedSubject by remember { mutableStateOf<SubjectSummary?>(null) }
@@ -61,6 +66,48 @@ fun MarksScreen(
             .fillMaxSize()
             .padding(16.dp)
     ) {
+        // Academic Period Selector Tabs
+        if (periods.isNotEmpty()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                periods.forEachIndexed { index, period ->
+                    val isSelected = index == selectedPeriodIndex
+                    Surface(
+                        shape = RoundedCornerShape(18.dp),
+                        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHighest,
+                        modifier = Modifier.clickable { onSelectPeriod(index) }
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                text = period.title,
+                                style = MaterialTheme.typography.labelLarge,
+                                color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+                                fontWeight = FontWeight.Bold
+                            )
+                            if (period.start.length == 8 && period.end.length == 8) {
+                                Spacer(modifier = Modifier.height(2.dp))
+                                val d1 = "${period.start.substring(6, 8)}.${period.start.substring(4, 6)}"
+                                val d2 = "${period.end.substring(6, 8)}.${period.end.substring(4, 6)}"
+                                Text(
+                                    text = "$d1 – $d2",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (isSelected) MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f) else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+        }
+
         // Hero Overall GPA Card
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -134,18 +181,61 @@ fun MarksScreen(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            items(subjects, key = { it.subject }) { item ->
-                SubjectMarkCard(
-                    summary = item,
-                    onClick = { selectedSubject = item }
-                )
+        if (subjects.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.padding(24.dp)
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(24.dp),
+                        color = MaterialTheme.colorScheme.secondaryContainer,
+                        modifier = Modifier.padding(12.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Star,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                            modifier = Modifier
+                                .padding(20.dp)
+                                .height(40.dp)
+                                .width(40.dp)
+                        )
+                    }
+                    Text(
+                        text = "В этом периоде пока нет оценок",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "Оценки появятся, как только учителя выставят их в журнал",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center
+                    )
+                }
             }
-            item {
-                Spacer(modifier = Modifier.height(80.dp))
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                items(subjects, key = { it.subject }) { item ->
+                    SubjectMarkCard(
+                        summary = item,
+                        onClick = { selectedSubject = item }
+                    )
+                }
+                item {
+                    Spacer(modifier = Modifier.height(80.dp))
+                }
             }
         }
     }

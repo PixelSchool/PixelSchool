@@ -13,17 +13,21 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBackIos
+import androidx.compose.material.icons.automirrored.rounded.ArrowForwardIos
 import androidx.compose.material.icons.rounded.Celebration
 import androidx.compose.material.icons.rounded.DateRange
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -43,6 +47,8 @@ fun ScheduleScreen(
     schedule: List<DaySchedule>,
     selectedDayIndex: Int,
     onSelectDay: (Int) -> Unit,
+    weekOffset: Int = 0,
+    onChangeWeekOffset: (Int) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val selectedDay = schedule.getOrNull(selectedDayIndex)
@@ -50,8 +56,59 @@ fun ScheduleScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(top = 16.dp)
+            .padding(top = 8.dp)
     ) {
+        // Week Navigator Bar
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(
+                onClick = { onChangeWeekOffset(-1) }
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Rounded.ArrowBackIos,
+                    contentDescription = "Предыдущая неделя",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerHigh
+            ) {
+                Text(
+                    text = when (weekOffset) {
+                        0 -> "Текущая неделя"
+                        1 -> "Следующая неделя"
+                        -1 -> "Предыдущая неделя"
+                        else -> if (weekOffset > 0) "+$weekOffset нед." else "$weekOffset нед."
+                    },
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+
+            IconButton(
+                onClick = { onChangeWeekOffset(1) }
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Rounded.ArrowForwardIos,
+                    contentDescription = "Следующая неделя",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(6.dp))
+
         // Expressive Day Selector Tabs
         Row(
             modifier = Modifier

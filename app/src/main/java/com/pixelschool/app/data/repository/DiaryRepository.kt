@@ -2,6 +2,7 @@ package com.pixelschool.app.data.repository
 
 import com.pixelschool.app.data.local.MockDataProvider
 import com.pixelschool.app.data.local.SessionStore
+import com.pixelschool.app.data.model.AcademicPeriod
 import com.pixelschool.app.data.model.DaySchedule
 import com.pixelschool.app.data.model.Homework
 import com.pixelschool.app.data.model.Mark
@@ -47,7 +48,21 @@ class DiaryRepository(
         _session.value = null
     }
 
-    suspend fun getSchedule(): List<DaySchedule> {
+    suspend fun getPeriods(): List<AcademicPeriod> {
+        val currentSession = _session.value ?: return MockDataProvider.getAcademicPeriods()
+        if (currentSession.isDemo) {
+            return MockDataProvider.getAcademicPeriods()
+        }
+
+        val res = apiClient.fetchPeriods(
+            token = currentSession.token,
+            vendor = currentSession.vendor,
+            studentId = currentSession.studentId.ifBlank { null }
+        )
+        return res.getOrDefault(apiClient.generateDefaultAcademicPeriods())
+    }
+
+    suspend fun getSchedule(weekOffset: Int = 0): List<DaySchedule> {
         val currentSession = _session.value ?: return MockDataProvider.getWeekSchedule()
         if (currentSession.isDemo) {
             return MockDataProvider.getWeekSchedule()
@@ -63,10 +78,13 @@ class DiaryRepository(
             }
         }
 
+        val weekRange = apiClient.getWeekRangeForOffset(weekOffset)
+
         val remoteResult = apiClient.fetchDiary(
             token = activeSession.token,
             vendor = activeSession.vendor,
             studentId = activeSession.studentId.ifBlank { null },
+            days = weekRange,
             cookies = sessionStore.getCookies()
         )
 
@@ -78,13 +96,13 @@ class DiaryRepository(
         }
     }
 
-    suspend fun getHomework(): List<Homework> {
+    suspend fun getHomework(weekOffset: Int = 0): List<Homework> {
         val currentSession = _session.value ?: return MockDataProvider.getHomeworkList()
         if (currentSession.isDemo) {
             return MockDataProvider.getHomeworkList()
         }
 
-        val schedule = getSchedule()
+        val schedule = getSchedule(weekOffset)
         val hwList = mutableListOf<Homework>()
         var hwCounter = 1
         for (day in schedule) {
@@ -105,10 +123,17 @@ class DiaryRepository(
         return hwList
     }
 
-    suspend fun getMarks(): List<SubjectSummary> {
+    suspend fun getMarks(days: String? = null): List<SubjectSummary> {
         val currentSession = _session.value ?: return MockDataProvider.getSubjectsSummary()
         if (currentSession.isDemo) {
             return MockDataProvider.getSubjectsSummary()
+        }
+
+        var targetDays = days
+        if (targetDays.isNullOrBlank()) {
+            val periods = getPeriods()
+            targetDays = periods.firstOrNull { it.isActive }?.rangeDays
+                ?: periods.firstOrNull()?.rangeDays
         }
 
         // Try getting official term marks first
@@ -116,6 +141,7 @@ class DiaryRepository(
             token = currentSession.token,
             vendor = currentSession.vendor,
             studentId = currentSession.studentId.ifBlank { null },
+            days = targetDays,
             cookies = sessionStore.getCookies()
         )
 
@@ -135,18 +161,27 @@ class DiaryRepository(
             }
         }
 
-        if (subjectMarksMap.isEmpty()) {
-            return emptyList()
+        if (subjectMarksMap.isNotEmpty()) {
+            return subjectMarksMap.map { (subject, marks) ->
+                val numericValues = marks.mapNotNull { it.numericValue }
+                val avg = if (numericValues.isNotEmpty()) numericValues.average().toFloat() else 0f
+                SubjectSummary(
+                    subject = subject,
+                    average = avg,
+                    marks = marks
+                )
+            }.sortedByDescending { it.average }
         }
 
-        return subjectMarksMap.map { (subject, marks) ->
-            val numericValues = marks.mapNotNull { it.numericValue }
-            val avg = if (numericValues.isNotEmpty()) numericValues.average().toFloat() else 0f
-            SubjectSummary(
-                subject = subject,
-                average = avg,
-                marks = marks
-            )
-        }.sortedByDescending { it.average }
+        // Fallback: web scraping
+        val cookies = sessionStore.getCookies()
+        if (!cookies.isNullOrEmpty()) {
+            val webMarks = apiClient.scrapeMarksFromWeb(cookies)
+            if (webMarks.isSuccess && webMarks.getOrNull()?.isNotEmpty() == true) {
+                return webMarks.getOrThrow()
+            }
+        }
+
+        return emptyList()
     }
 }
