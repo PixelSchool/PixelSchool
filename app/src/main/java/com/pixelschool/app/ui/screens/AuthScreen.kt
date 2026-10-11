@@ -255,10 +255,9 @@ fun GosuslugiAuthDialog(
                                 } else if (cookies.isNotBlank()) {
                                     AuthCredentials(token = "web_session", vendor = "edu")
                                 } else null
-                                val jwtUser = TokenExtractor.extractUserTitleFromJwt(auth?.token ?: cookieToken)
-                                val jwtSchool = TokenExtractor.extractSchoolFromJwt(auth?.token ?: cookieToken)
-                                val uName = capturedUserName ?: jwtUser
-                                val sName = capturedSchoolName ?: jwtSchool
+                                val jwtProfile = TokenExtractor.extractProfileFromJwt(auth?.token ?: cookieToken)
+                                val uName = capturedUserName ?: jwtProfile?.fullName
+                                val sName = capturedSchoolName ?: jwtProfile?.school
                                 onAuthCompleted(auth, cookies, uName, sName)
                             }
                         },
@@ -303,9 +302,10 @@ fun GosuslugiAuthDialog(
                                         capturedAuth = auth
                                         hasCompleted = true
                                         val cookies = getSessionCookies()
-                                        val jwtUser = TokenExtractor.extractUserTitleFromJwt(auth.token)
-                                        val jwtSchool = TokenExtractor.extractSchoolFromJwt(auth.token)
-                                        onAuthCompleted(auth, cookies, capturedUserName ?: jwtUser, capturedSchoolName ?: jwtSchool)
+                                        val jwtProfile = TokenExtractor.extractProfileFromJwt(auth.token)
+                                        val uName = capturedUserName ?: jwtProfile?.fullName
+                                        val sName = capturedSchoolName ?: jwtProfile?.school
+                                        onAuthCompleted(auth, cookies, uName, sName)
                                         return
                                     }
 
@@ -391,10 +391,9 @@ fun GosuslugiAuthDialog(
                                                         AuthCredentials(token = "web_session", vendor = "edu")
                                                     } else null
 
-                                                val jwtUser = TokenExtractor.extractUserTitleFromJwt(finalAuth?.token ?: cookieToken)
-                                                val jwtSchool = TokenExtractor.extractSchoolFromJwt(finalAuth?.token ?: cookieToken)
-                                                val finalUser = jsUser ?: capturedUserName ?: jwtUser
-                                                val finalSchool = jsSchool ?: capturedSchoolName ?: jwtSchool
+                                                val jwtProfile = TokenExtractor.extractProfileFromJwt(finalAuth?.token ?: cookieToken)
+                                                val finalUser = jsUser ?: capturedUserName ?: jwtProfile?.fullName
+                                                val finalSchool = jsSchool ?: capturedSchoolName ?: jwtProfile?.school
 
                                                 if (finalAuth != null && (!phpsessid.isNullOrBlank() || !cookieToken.isNullOrBlank() || isPageFinished)) {
                                                     hasCompleted = true
