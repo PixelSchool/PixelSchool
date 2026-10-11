@@ -18,9 +18,17 @@ class SessionStore(context: Context) {
         private const val KEY_IS_DEMO = "key_is_demo"
         private const val KEY_COOKIES = "key_cookies"
         private const val KEY_STUDENT_ID = "key_student_id"
+        private const val KEY_FIRST_NAME = "key_first_name"
+        private const val KEY_LAST_NAME = "key_last_name"
+        private const val KEY_SCHOOL_NAME = "key_school_name"
     }
 
     fun saveSession(session: UserSession, cookies: String? = null) {
+        val parts = session.userTitle.trim().split(Regex("""\s+"""))
+        val derivedLast = if (session.lastName.isNotBlank()) session.lastName else parts.getOrNull(0) ?: ""
+        val derivedFirst = if (session.firstName.isNotBlank()) session.firstName else parts.getOrNull(1) ?: ""
+        val derivedSchool = if (session.schoolName.isNotBlank()) session.schoolName else session.schoolTitle
+
         prefs.edit().apply {
             putString(KEY_TOKEN, session.token)
             putString(KEY_VENDOR, session.vendor)
@@ -29,6 +37,9 @@ class SessionStore(context: Context) {
             putString(KEY_SCHOOL_TITLE, session.schoolTitle)
             putBoolean(KEY_IS_DEMO, session.isDemo)
             putString(KEY_STUDENT_ID, session.studentId)
+            putString(KEY_FIRST_NAME, derivedFirst)
+            putString(KEY_LAST_NAME, derivedLast)
+            putString(KEY_SCHOOL_NAME, derivedSchool)
             if (cookies != null) {
                 putString(KEY_COOKIES, cookies)
             }
@@ -40,15 +51,43 @@ class SessionStore(context: Context) {
         val token = prefs.getString(KEY_TOKEN, null) ?: return null
         val isDemo = prefs.getBoolean(KEY_IS_DEMO, false)
         val vendor = prefs.getString(KEY_VENDOR, "edu") ?: "edu"
+        val rawUser = prefs.getString(KEY_USER_TITLE, "") ?: ""
+        val rawSchool = prefs.getString(KEY_SCHOOL_TITLE, "") ?: ""
+        val firstName = prefs.getString(KEY_FIRST_NAME, "") ?: ""
+        val lastName = prefs.getString(KEY_LAST_NAME, "") ?: ""
+        val schoolName = prefs.getString(KEY_SCHOOL_NAME, "") ?: ""
+
+        val effectiveUser = if (rawUser.isNotBlank() && rawUser != "Ученик") {
+            rawUser
+        } else if (lastName.isNotBlank() && firstName.isNotBlank()) {
+            "$lastName $firstName".trim()
+        } else if (rawUser.isNotBlank()) {
+            rawUser
+        } else {
+            "Ученик"
+        }
+
+        val effectiveSchool = if (rawSchool.isNotBlank() && rawSchool != "Республика Крым" && rawSchool != "ГИС РК «Образование»") {
+            rawSchool
+        } else if (schoolName.isNotBlank() && schoolName != "Республика Крым" && schoolName != "ГИС РК «Образование»") {
+            schoolName
+        } else if (rawSchool.isNotBlank()) {
+            rawSchool
+        } else {
+            "Республика Крым"
+        }
 
         return UserSession(
             token = token,
             vendor = vendor,
             login = prefs.getString(KEY_LOGIN, "") ?: "",
-            userTitle = prefs.getString(KEY_USER_TITLE, "") ?: "",
-            schoolTitle = prefs.getString(KEY_SCHOOL_TITLE, "") ?: "",
+            userTitle = effectiveUser,
+            schoolTitle = effectiveSchool,
             isDemo = isDemo,
-            studentId = prefs.getString(KEY_STUDENT_ID, "") ?: ""
+            studentId = prefs.getString(KEY_STUDENT_ID, "") ?: "",
+            firstName = firstName,
+            lastName = lastName,
+            schoolName = if (schoolName.isNotBlank()) schoolName else effectiveSchool
         )
     }
 

@@ -26,6 +26,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.PrimaryScrollableTabRow
+import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
@@ -112,7 +113,7 @@ fun MarksScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(top = 6.dp)
+            .padding(top = 12.dp)
     ) {
         // Canonical M3 Grades Tabs with edgePadding = 16.dp
         GradesTabRow(
@@ -126,7 +127,7 @@ fun MarksScreen(
             }
         )
 
-        Spacer(modifier = Modifier.height(10.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
         Column(
             modifier = Modifier
@@ -196,7 +197,7 @@ fun MarksScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
         Text(
             text = if (isYearTab) "Ведомость за год" else "Предметы",
@@ -204,7 +205,7 @@ fun MarksScreen(
             fontWeight = FontWeight.Bold
         )
 
-        Spacer(modifier = Modifier.height(10.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
         if (displayedSubjects.isEmpty()) {
             Box(
@@ -250,7 +251,7 @@ fun MarksScreen(
         } else {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 if (isYearTab) {
                     items(displayedSubjects, key = { it.subject }) { item ->
@@ -633,7 +634,7 @@ fun GradesTabRow(
     tabs: List<String>,
     onTabSelected: (Int) -> Unit
 ) {
-    PrimaryScrollableTabRow(
+    ScrollableTabRow(
         selectedTabIndex = selectedTabIndex,
         edgePadding = 16.dp,
         divider = {}
@@ -645,7 +646,9 @@ fun GradesTabRow(
                 text = {
                     Text(
                         text = title,
-                        style = MaterialTheme.typography.titleSmall
+                        style = MaterialTheme.typography.titleSmall,
+                        maxLines = 1,
+                        softWrap = false
                     )
                 }
             )
