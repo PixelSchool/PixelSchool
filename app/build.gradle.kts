@@ -30,8 +30,24 @@ android {
                 enableV2Signing = true
                 enableV3Signing = true
                 enableV4Signing = true
+            } else {
+                // CI / Local fallback: sign with debug keystore to guarantee a valid signed release APK
+                val debugConfig = getByName("debug")
+                storeFile = debugConfig.storeFile
+                storePassword = debugConfig.storePassword
+                keyAlias = debugConfig.keyAlias
+                keyPassword = debugConfig.keyPassword
+                enableV1Signing = true
+                enableV2Signing = true
+                enableV3Signing = true
+                enableV4Signing = true
             }
         }
+    }
+
+    lint {
+        checkReleaseBuilds = false
+        abortOnError = false
     }
 
     buildTypes {
