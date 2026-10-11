@@ -2,7 +2,6 @@ package com.pixelschool.app.ui.screens
 
 import android.annotation.SuppressLint
 import android.graphics.Bitmap
-import android.net.Uri
 import android.webkit.CookieManager
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
@@ -49,12 +48,13 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import org.json.JSONObject
+import com.pixelschool.app.data.remote.AuthCredentials
 import com.pixelschool.app.data.remote.TokenExtractor
 
 @Composable
 fun AuthScreen(
     onLoginDemo: () -> Unit,
-    onLoginWithSession: (tokenOrVToken: String?, cookies: String?, userName: String?) -> Unit,
+    onLoginWithSession: (credentials: AuthCredentials?, cookies: String?, userName: String?) -> Unit,
     isLoading: Boolean,
     errorMessage: String?,
     modifier: Modifier = Modifier
@@ -172,9 +172,9 @@ fun AuthScreen(
     if (showWebViewDialog) {
         GosuslugiAuthDialog(
             onDismiss = { showWebViewDialog = false },
-            onAuthCompleted = { token, cookies, userName ->
+            onAuthCompleted = { credentials, cookies, userName ->
                 showWebViewDialog = false
-                onLoginWithSession(token, cookies, userName)
+                onLoginWithSession(credentials, cookies, userName)
             }
         )
     }
@@ -184,10 +184,9 @@ fun AuthScreen(
 @Composable
 fun GosuslugiAuthDialog(
     onDismiss: () -> Unit,
-    onAuthCompleted: (tokenOrVToken: String?, cookies: String?, userName: String?) -> Unit
+    onAuthCompleted: (credentials: AuthCredentials?, cookies: String?, userName: String?) -> Unit
 ) {
-    var webViewRef by remember { mutableStateOf<WebView?>(null) }
-    var capturedToken by remember { mutableStateOf<String?>(null) }
+    var capturedAuth by remember { mutableStateOf<AuthCredentials?>(null) }
     var capturedUserName by remember { mutableStateOf<String?>(null) }
     var hasCompleted by remember { mutableStateOf(false) }
 
@@ -247,8 +246,10 @@ fun GosuslugiAuthDialog(
                             if (!hasCompleted) {
                                 hasCompleted = true
                                 val cookies = getSessionCookies()
-                                val token = capturedToken ?: if (cookies.isNotBlank()) "web_session" else null
-                                onAuthCompleted(token, cookies, capturedUserName)
+                                val auth = capturedAuth ?: if (cookies.isNotBlank()) {
+                                    AuthCredentials(token = "web_session", vendor = "edu")
+                                } else null
+                                onAuthCompleted(auth, cookies, capturedUserName)
                             }
                         },
                         shape = RoundedCornerShape(12.dp)
@@ -262,11 +263,10 @@ fun GosuslugiAuthDialog(
                 AndroidView(
                     factory = { context ->
                         WebView(context).apply {
-                            webViewRef = this
                             settings.javaScriptEnabled = true
                             settings.domStorageEnabled = true
 
-                            // Strip Android WebView markers so Gosuslugi / ElJur treat it as standard browser
+                            // Strip Android WebView markers matching ru.eljur.region official app
                             val currentUa = settings.userAgentString
                             settings.userAgentString = currentUa
                                 .replace(Regex("(Version.*\\s)Chrome"), "Chrome")
@@ -280,55 +280,53 @@ fun GosuslugiAuthDialog(
                                 if (url == null || hasCompleted) return
 
                                 try {
-                                    // 1. Intercept OAuth code / JWT / v_token from URL
-                                    val token = TokenExtractor.extractToken(url)
-                                    if (!token.isNullOrBlank()) {
-                                        capturedToken = token
-                                        val jwtUser = TokenExtractor.extractUserTitleFromJwt(token)
-                                        if (!jwtUser.isNullOrBlank()) {
-                                            capturedUserName = jwtUser
-                                        }
-
-                                        // Fallback safety: if redirect hangs, auto-complete after 1.5s with captured token
-                                        postDelayed({
-                                            if (!hasCompleted) {
-                                                hasCompleted = true
-                                                val c = getSessionCookies()
-                                                onAuthCompleted(token, c, capturedUserName)
-                                            }
-                                        }, 1500)
+                                    // 1. Check if URL contains official v_token or direct (token, vendor, login)
+                                    val auth = TokenExtractor.extractAuth(url)
+                                    if (auth != null && auth.isValid) {
+                                        capturedAuth = auth
+                                        hasCompleted = true
+                                        val cookies = getSessionCookies()
+                                        onAuthCompleted(auth, cookies, capturedUserName)
+                                        return
                                     }
 
-                                    // 2. Detect journal web interface or completion of Gosuslugi callback
-                                    val isCallbackAction = url.contains("journal-esia-region-action") &&
-                                            (url.contains("code=") || capturedToken != null)
+                                    // 2. If this is intermediate ESIA authorization callback (code=...),
+                                    // DO NOT stop or capture; allow edu.rk.gov.ru to exchange it on server!
+                                    if (TokenExtractor.isEsiaCallbackCode(url)) {
+                                        return
+                                    }
+
+                                    // 3. Detect journal web interface on page finished
                                     val isTargetDiary = url.contains("/journal-app") ||
                                             url.contains("/journal-student") ||
                                             (url.contains("edu.rk.gov.ru") && !url.contains("/authorize") &&
                                              !url.contains("esia.gosuslugi.ru") && !url.contains("flow=v2"))
 
-                                    if (isPageFinished && (isCallbackAction || isTargetDiary || capturedToken != null)) {
+                                    if (isPageFinished && isTargetDiary) {
                                         val cookies = getSessionCookies()
 
                                         evaluateJavascript(
                                             """
                                             (function() {
                                                 var t = '';
+                                                var v = '';
                                                 try {
                                                     t = localStorage.getItem('token') || localStorage.getItem('auth_token') || sessionStorage.getItem('token') || '';
+                                                    v = localStorage.getItem('vendor') || sessionStorage.getItem('vendor') || '';
                                                 } catch(e) {}
                                                 var u = '';
                                                 try {
                                                     var el = document.querySelector('.user-name, .b-dropdown__user, .header-user__name, .m-user__name');
                                                     if (el) u = el.innerText.trim();
                                                 } catch(e) {}
-                                                return JSON.stringify({ token: t, user: u });
+                                                return JSON.stringify({ token: t, vendor: v, user: u });
                                             })()
                                             """.trimIndent()
                                         ) { jsResult ->
                                             if (hasCompleted) return@evaluateJavascript
 
                                             var jsToken: String? = null
+                                            var jsVendor: String? = null
                                             var jsUser: String? = null
                                             try {
                                                 if (!jsResult.isNullOrBlank() && jsResult != "null") {
@@ -338,16 +336,23 @@ fun GosuslugiAuthDialog(
                                                         JSONObject(jsResult)
                                                     }
                                                     jsToken = clean.optString("token").ifEmpty { null }
+                                                    jsVendor = clean.optString("vendor").ifEmpty { null }
                                                     jsUser = clean.optString("user").ifEmpty { null }
                                                 }
                                             } catch (_: Exception) {}
 
-                                            val finalToken = capturedToken ?: jsToken ?: if (cookies.isNotBlank()) "web_session" else null
+                                            val finalAuth = capturedAuth
+                                                ?: if (!jsToken.isNullOrBlank() && !jsVendor.isNullOrBlank()) {
+                                                    AuthCredentials(token = jsToken, vendor = jsVendor)
+                                                } else if (cookies.isNotBlank()) {
+                                                    AuthCredentials(token = "web_session", vendor = "edu")
+                                                } else null
+
                                             val finalUser = jsUser ?: capturedUserName
 
-                                            if (finalToken != null) {
+                                            if (finalAuth != null) {
                                                 hasCompleted = true
-                                                onAuthCompleted(finalToken, cookies, finalUser)
+                                                onAuthCompleted(finalAuth, cookies, finalUser)
                                             }
                                         }
                                     }

@@ -15,8 +15,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material.icons.rounded.AccountCircle
-import androidx.compose.material.icons.rounded.Logout
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.School
 import androidx.compose.material3.ButtonDefaults
@@ -66,7 +66,7 @@ fun MainAppScreen(
     if (session == null) {
         AuthScreen(
             onLoginDemo = { viewModel.loginDemo() },
-            onLoginWithSession = { token, cookies, user -> viewModel.loginWithWebSession(token, cookies, user) },
+            onLoginWithSession = { auth, cookies, user -> viewModel.loginWithSession(auth, cookies, user) },
             isLoading = isLoading,
             errorMessage = errorMessage
         )
@@ -124,12 +124,37 @@ fun MainAppScreen(
                 }
             }
         ) { innerPadding ->
-            Crossfade(
-                targetState = currentScreen,
+            Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding)
-            ) { screen ->
+            ) {
+                if (!errorMessage.isNullOrBlank()) {
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.errorContainer
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = errorMessage ?: "",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                }
+
+                Crossfade(
+                    targetState = currentScreen,
+                    modifier = Modifier.fillMaxSize()
+                ) { screen ->
                 when (screen) {
                     Screen.Schedule -> {
                         val schedule by viewModel.schedule.collectAsState()
@@ -161,6 +186,7 @@ fun MainAppScreen(
             }
         }
     }
+}
 }
 
 @Composable
@@ -266,7 +292,7 @@ fun ProfileScreen(
             )
         ) {
             Icon(
-                imageVector = Icons.Rounded.Logout,
+                imageVector = Icons.AutoMirrored.Rounded.Logout,
                 contentDescription = null,
                 modifier = Modifier.size(18.dp)
             )
