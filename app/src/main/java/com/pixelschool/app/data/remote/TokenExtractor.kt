@@ -76,13 +76,7 @@ object TokenExtractor {
 
     private fun extractParamFromFragment(uri: Uri, paramName: String): String? {
         val fragment = uri.fragment ?: return null
-        for (part in fragment.split("&")) {
-            val kv = part.split("=")
-            if (kv.size == 2 && kv[0] == paramName) {
-                return kv[1]
-            }
-        }
-        return null
+        return Uri.parse("?$fragment").getQueryParameter(paramName)
     }
 
     /**
@@ -131,8 +125,5 @@ object TokenExtractor {
             null
         }
     }
-
-    fun isJwtToken(token: String?): Boolean {
-        return token != null && token.startsWith("eyJ") && token.contains(".")
-    }
 }
+

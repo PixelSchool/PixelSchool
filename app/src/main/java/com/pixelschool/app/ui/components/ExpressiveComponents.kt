@@ -1,6 +1,5 @@
 package com.pixelschool.app.ui.components
 
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -13,7 +12,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CheckCircle
@@ -25,11 +23,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
@@ -37,19 +33,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.pixelschool.app.data.model.Homework
 import com.pixelschool.app.data.model.Lesson
-import com.pixelschool.app.data.model.Mark
-import com.pixelschool.app.ui.theme.Grade2Color
 import com.pixelschool.app.ui.theme.Grade2Container
-import com.pixelschool.app.ui.theme.Grade3Color
 import com.pixelschool.app.ui.theme.Grade3Container
-import com.pixelschool.app.ui.theme.Grade4Color
 import com.pixelschool.app.ui.theme.Grade4Container
-import com.pixelschool.app.ui.theme.Grade5Color
 import com.pixelschool.app.ui.theme.Grade5Container
 import com.pixelschool.app.ui.theme.OnGrade2Container
 import com.pixelschool.app.ui.theme.OnGrade3Container
 import com.pixelschool.app.ui.theme.OnGrade4Container
 import com.pixelschool.app.ui.theme.OnGrade5Container
+
 
 @Composable
 fun ExpressiveGradeBadge(

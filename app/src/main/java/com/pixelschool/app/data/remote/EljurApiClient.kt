@@ -22,11 +22,7 @@ import java.util.Locale
 import java.util.concurrent.TimeUnit
 
 class EljurApiClient(
-    private val client: OkHttpClient = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(20, TimeUnit.SECONDS)
-        .followRedirects(true)
-        .build()
+    private val client: OkHttpClient = RussianTrustManager.createOkHttpClient()
 ) {
 
     private val baseUrl = "https://edu.rk.gov.ru"
@@ -36,7 +32,32 @@ class EljurApiClient(
     private val fallbackDevKey = "19c4bfc2705023fe080ce94ace26aec9"
     private val devKeys = listOf(devKey, fallbackDevKey)
 
-    private val browserUserAgent = "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Mobile Safari/537.36"
+    private val browserUserAgent = "Mozilla/5.0 (Linux; Android 14; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36"
+
+    fun buildRequest(url: String, cookies: String? = null, isJson: Boolean = true): Request {
+        val builder = Request.Builder()
+            .url(url)
+            .header("User-Agent", browserUserAgent)
+            .header("sec-ch-ua", "\"Chromium\";v=\"130\", \"Google Chrome\";v=\"130\", \"Not?A_Brand\";v=\"99\"")
+            .header("sec-ch-ua-mobile", "?1")
+            .header("sec-ch-ua-platform", "\"Android\"")
+            .header("Accept-Language", "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7")
+            .header("Accept", if (isJson) "application/json, text/plain, */*" else "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+
+        if (!cookies.isNullOrBlank()) {
+            builder.header("Cookie", cookies)
+        }
+        return builder.build()
+    }
+
+    fun getBaseUrls(vendor: String = "edu"): List<String> {
+        val list = mutableListOf("https://edu.rk.gov.ru", "https://api.eljur.ru")
+        if (vendor.isNotBlank() && vendor != "edu") {
+            list.add("https://$vendor.eljur.ru")
+        }
+        return list.distinct()
+    }
+
 
     private fun extractUserVendor(json: JSONObject, fallbackUserName: String?): UserSession? {
         val respObj = json.optJSONObject("response") ?: json
@@ -93,88 +114,133 @@ class EljurApiClient(
         } else ""
 
         val tokenParam = if (effectiveToken.isNotBlank()) "&auth_token=$effectiveToken" else ""
+        val baseUrls = getBaseUrls(session.vendor)
 
-        for (dk in devKeys) {
-            try {
-                val url = "$baseUrl/apiv3/getrules?devkey=$dk&out_format=json$tokenParam$vendorParam"
-                val reqBuilder = Request.Builder()
-                    .url(url)
-                    .header("User-Agent", browserUserAgent)
-                if (!cookies.isNullOrEmpty()) {
-                    reqBuilder.addHeader("Cookie", cookies)
-                }
+        var currentSession = session
 
-                val resp = client.newCall(reqBuilder.build()).execute()
-                val body = resp.body?.string()
-                if (resp.isSuccessful && !body.isNullOrEmpty()) {
-                    val json = JSONObject(body)
-                    val respObj = json.optJSONObject("response") ?: json
-                    if (respObj.optInt("state", 200) == 200) {
-                        val result = respObj.optJSONObject("result") ?: respObj
-                        val relations = result.optJSONObject("relations")
+        for (base in baseUrls) {
+            for (dk in devKeys) {
+                try {
+                    val url = "$base/apiv3/getrules?devkey=$dk&out_format=json$tokenParam$vendorParam"
+                    val req = buildRequest(url, cookies)
+                    val resp = client.newCall(req).execute()
+                    val body = resp.body?.string()
+                    if (resp.isSuccessful && !body.isNullOrEmpty()) {
+                        val json = JSONObject(body)
+                        val respObj = json.optJSONObject("response") ?: json
+                        if (respObj.optInt("state", 200) == 200) {
+                            val result = respObj.optJSONObject("result") ?: respObj
+                            val relations = result.optJSONObject("relations")
 
-                        val studentsObj = relations?.optJSONObject("students") ?: result.optJSONObject("students")
-                        val studentsArr = relations?.optJSONArray("students") ?: result.optJSONArray("students")
+                            val studentsObj = relations?.optJSONObject("students") ?: result.optJSONObject("students")
+                            val studentsArr = relations?.optJSONArray("students") ?: result.optJSONArray("students")
 
-                        var realStudentId = ""
-                        var studentTitle: String? = null
+                            var realStudentId = ""
+                            var studentTitle: String? = null
 
-                        if (studentsObj != null && studentsObj.length() > 0) {
-                            val firstKey = studentsObj.keys().asSequence().firstOrNull()
-                            val st = if (firstKey != null) studentsObj.optJSONObject(firstKey) else null
-                            realStudentId = st?.optString("id")?.ifBlank { null }
-                                ?: st?.optString("name")?.ifBlank { null }
-                                ?: firstKey ?: ""
-                            studentTitle = st?.optString("title")?.ifBlank { null }
-                                ?: st?.optString("name")?.ifBlank { null }
-                        } else if (studentsArr != null && studentsArr.length() > 0) {
-                            val st = studentsArr.optJSONObject(0)
-                            realStudentId = st?.optString("id")?.ifBlank { null }
-                                ?: st?.optString("name")?.ifBlank { null }
-                                ?: ""
-                            studentTitle = st?.optString("title")?.ifBlank { null }
+                            if (studentsObj != null && studentsObj.length() > 0) {
+                                val firstKey = studentsObj.keys().asSequence().firstOrNull()
+                                val st = if (firstKey != null) studentsObj.optJSONObject(firstKey) else null
+                                realStudentId = st?.optString("id")?.ifBlank { null }
+                                    ?: st?.optString("student_id")?.ifBlank { null }
+                                    ?: st?.optString("child_id")?.ifBlank { null }
+                                    ?: st?.optString("name")?.ifBlank { null }
+                                    ?: firstKey ?: ""
+                                studentTitle = st?.optString("title")?.ifBlank { null }
+                                    ?: st?.optString("name")?.ifBlank { null }
+                            } else if (studentsArr != null && studentsArr.length() > 0) {
+                                val st = studentsArr.optJSONObject(0)
+                                realStudentId = st?.optString("id")?.ifBlank { null }
+                                    ?: st?.optString("student_id")?.ifBlank { null }
+                                    ?: st?.optString("child_id")?.ifBlank { null }
+                                    ?: st?.optString("name")?.ifBlank { null }
+                                    ?: ""
+                                studentTitle = st?.optString("title")?.ifBlank { null }
+                            }
+
+                            if (realStudentId.isBlank()) {
+                                realStudentId = result.optString("student_id").ifBlank { null }
+                                    ?: result.optString("child_id").ifBlank { null }
+                                    ?: result.optString("id").ifBlank { null }
+                                    ?: result.optString("name").ifBlank { null }
+                                    ?: result.optString("guid").ifBlank { null }
+                                    ?: ""
+                            }
+
+                            if (studentTitle.isNullOrBlank()) {
+                                studentTitle = result.optString("title").ifBlank { null }
+                                    ?: currentSession.userTitle
+                            }
+
+                            val realSchool = result.optString("school").ifBlank { null }
+                                ?: result.optString("vendor_title").ifBlank { null }
+                                ?: currentSession.schoolTitle
+
+                            val realVendor = result.optString("vendor").ifBlank { currentSession.vendor }
+
+                            val uploadUrl = result.optString("uploadFileUrl").ifBlank {
+                                result.optString("upload_file_url").ifBlank { null }
+                            }
+                            var foundToken = result.optString("token").ifBlank { null }
+                            if (foundToken.isNullOrBlank() && uploadUrl != null) {
+                                try {
+                                    foundToken = Uri.parse(uploadUrl).getQueryParameter("token")
+                                } catch (_: Exception) {}
+                            }
+                            val finalToken = if (!foundToken.isNullOrBlank()) foundToken else currentSession.token
+
+                            currentSession = currentSession.copy(
+                                token = finalToken,
+                                vendor = realVendor,
+                                studentId = realStudentId,
+                                userTitle = studentTitle,
+                                schoolTitle = realSchool
+                            )
+
+                            if (realStudentId.isNotBlank()) {
+                                return currentSession
+                            }
                         }
-
-                        if (realStudentId.isBlank()) {
-                            realStudentId = result.optString("id").ifBlank { null }
-                                ?: result.optString("name").ifBlank { null }
-                                ?: ""
-                        }
-
-                        if (studentTitle.isNullOrBlank()) {
-                            studentTitle = result.optString("title").ifBlank { null }
-                                ?: session.userTitle
-                        }
-
-                        val realSchool = result.optString("school").ifBlank { null }
-                            ?: session.schoolTitle
-
-                        val realVendor = result.optString("vendor").ifBlank { session.vendor }
-
-                        // Extract token from uploadFileUrl if present (mirrors ru.eljur.region ca/k.java)
-                        val uploadUrl = result.optString("uploadFileUrl").ifBlank {
-                            result.optString("upload_file_url").ifBlank { null }
-                        }
-                        var foundToken = result.optString("token").ifBlank { null }
-                        if (foundToken.isNullOrBlank() && uploadUrl != null) {
-                            try {
-                                foundToken = Uri.parse(uploadUrl).getQueryParameter("token")
-                            } catch (_: Exception) {}
-                        }
-                        val finalToken = if (!foundToken.isNullOrBlank()) foundToken else session.token
-
-                        return session.copy(
-                            token = finalToken,
-                            vendor = realVendor,
-                            studentId = realStudentId,
-                            userTitle = studentTitle,
-                            schoolTitle = realSchool
-                        )
                     }
-                }
-            } catch (_: Exception) {}
+                } catch (_: Exception) {}
+            }
         }
-        return session
+
+        // Try getprofileuserinfo across base URLs if studentId is still not found
+        for (base in baseUrls) {
+            for (dk in devKeys) {
+                try {
+                    val url = "$base/apiv3/getprofileuserinfo?devkey=$dk&out_format=json$tokenParam$vendorParam"
+                    val req = buildRequest(url, cookies)
+                    val resp = client.newCall(req).execute()
+                    val body = resp.body?.string()
+                    if (resp.isSuccessful && !body.isNullOrEmpty()) {
+                        val json = JSONObject(body)
+                        val respObj = json.optJSONObject("response") ?: json
+                        if (respObj.optInt("state", 200) == 200) {
+                            val result = respObj.optJSONObject("result") ?: respObj
+                            val profile = result.optJSONObject("profileUserInfo") ?: result
+                            val stId = profile.optString("studentID").ifBlank {
+                                profile.optString("student_id").ifBlank {
+                                    profile.optString("userID").ifBlank { null }
+                                }
+                            }
+                            val userName = profile.optString("userName").ifBlank { null }
+                            val schoolName = profile.optString("schoolName").ifBlank { null }
+                            if (!stId.isNullOrBlank() || !userName.isNullOrBlank()) {
+                                return currentSession.copy(
+                                    studentId = stId ?: currentSession.studentId,
+                                    userTitle = userName ?: currentSession.userTitle,
+                                    schoolTitle = schoolName ?: currentSession.schoolTitle
+                                )
+                            }
+                        }
+                    }
+                } catch (_: Exception) {}
+            }
+        }
+
+        return currentSession
     }
 
     /**
@@ -187,31 +253,29 @@ class EljurApiClient(
     ): Result<UserSession> = withContext(Dispatchers.IO) {
         try {
             val cookieToken = TokenExtractor.extractAuthTokenFromCookies(cookies)
+            val baseUrls = getBaseUrls(auth?.vendor ?: "edu")
 
             // Flow 1: If v_token is provided (standard official flow=v2), call getusersvendors
             val vToken = auth?.vToken
             if (!vToken.isNullOrBlank()) {
-                for (dk in devKeys) {
-                    val url = "$baseUrl/apiv3/getusersvendors?devkey=$dk&out_format=json&v_token=$vToken"
-                    val req = Request.Builder()
-                        .url(url)
-                        .header("User-Agent", browserUserAgent)
-                        .apply {
-                            if (!cookies.isNullOrEmpty()) addHeader("Cookie", cookies)
-                        }.build()
+                for (base in baseUrls) {
+                    for (dk in devKeys) {
+                        val url = "$base/apiv3/getusersvendors?devkey=$dk&out_format=json&v_token=$vToken"
+                        val req = buildRequest(url, cookies)
 
-                    try {
-                        val resp = client.newCall(req).execute()
-                        val body = resp.body?.string()
-                        if (resp.isSuccessful && !body.isNullOrEmpty()) {
-                            val json = JSONObject(body)
-                            val session = extractUserVendor(json, fallbackUserName)
-                            if (session != null) {
-                                val enriched = enrichWithRules(session, cookies)
-                                return@withContext Result.success(enriched)
+                        try {
+                            val resp = client.newCall(req).execute()
+                            val body = resp.body?.string()
+                            if (resp.isSuccessful && !body.isNullOrEmpty()) {
+                                val json = JSONObject(body)
+                                val session = extractUserVendor(json, fallbackUserName)
+                                if (session != null) {
+                                    val enriched = enrichWithRules(session, cookies)
+                                    return@withContext Result.success(enriched)
+                                }
                             }
-                        }
-                    } catch (_: Exception) {}
+                        } catch (_: Exception) {}
+                    }
                 }
             }
 
@@ -232,24 +296,22 @@ class EljurApiClient(
 
             // Flow 3: Session cookies present
             if (!cookies.isNullOrEmpty()) {
-                for (dk in devKeys) {
-                    val cookieReq = Request.Builder()
-                        .url("$baseUrl/apiv3/getusersvendors?devkey=$dk&out_format=json")
-                        .header("User-Agent", browserUserAgent)
-                        .addHeader("Cookie", cookies)
-                        .build()
-                    try {
-                        val cookieResp = client.newCall(cookieReq).execute()
-                        val cookieBody = cookieResp.body?.string()
-                        if (cookieResp.isSuccessful && !cookieBody.isNullOrEmpty()) {
-                            val json = JSONObject(cookieBody)
-                            val session = extractUserVendor(json, fallbackUserName)
-                            if (session != null) {
-                                val enriched = enrichWithRules(session, cookies)
-                                return@withContext Result.success(enriched)
+                for (base in baseUrls) {
+                    for (dk in devKeys) {
+                        val cookieReq = buildRequest("$base/apiv3/getusersvendors?devkey=$dk&out_format=json", cookies)
+                        try {
+                            val cookieResp = client.newCall(cookieReq).execute()
+                            val cookieBody = cookieResp.body?.string()
+                            if (cookieResp.isSuccessful && !cookieBody.isNullOrEmpty()) {
+                                val json = JSONObject(cookieBody)
+                                val session = extractUserVendor(json, fallbackUserName)
+                                if (session != null) {
+                                    val enriched = enrichWithRules(session, cookies)
+                                    return@withContext Result.success(enriched)
+                                }
                             }
-                        }
-                    } catch (_: Exception) {}
+                        } catch (_: Exception) {}
+                    }
                 }
 
                 // Call enrichWithRules directly with base session and cookies
@@ -285,11 +347,7 @@ class EljurApiClient(
 
     private fun scrapeUserProfile(cookies: String): Pair<String, String> {
         return try {
-            val req = Request.Builder()
-                .url("$baseUrl/journal-app")
-                .header("User-Agent", browserUserAgent)
-                .addHeader("Cookie", cookies)
-                .build()
+            val req = buildRequest("$baseUrl/journal-app", cookies, isJson = false)
             val resp = client.newCall(req).execute()
             val html = resp.body?.string() ?: return "" to ""
             val doc = Jsoup.parse(html)
@@ -319,16 +377,6 @@ class EljurApiClient(
         cal.add(Calendar.DAY_OF_MONTH, 6)
         val end = sdf.format(cal.time)
         return "$start-$end"
-    }
-
-    fun formatWeekRangeDisplay(range: String): String {
-        val parts = range.split("-")
-        if (parts.size == 2 && parts[0].length == 8 && parts[1].length == 8) {
-            val d1 = "${parts[0].substring(6, 8)}.${parts[0].substring(4, 6)}"
-            val d2 = "${parts[1].substring(6, 8)}.${parts[1].substring(4, 6)}"
-            return "$d1 – $d2"
-        }
-        return range
     }
 
     private fun formatDisplayDate(raw: String): String {
@@ -380,37 +428,34 @@ class EljurApiClient(
             } else ""
 
             val tokenParam = if (effectiveToken.isNotBlank()) "&auth_token=$effectiveToken" else ""
+            val baseUrls = getBaseUrls(vendor)
 
-            for (dk in devKeys) {
-                val urls = mutableListOf<String>()
-                if (!studentId.isNullOrBlank()) {
-                    urls.add("$baseUrl/apiv3/getperiods?devkey=$dk&out_format=json$tokenParam$vendorParam&weeks=true&show_disabled=true&student=$studentId")
-                }
-                urls.add("$baseUrl/apiv3/getperiods?devkey=$dk&out_format=json$tokenParam$vendorParam&weeks=true&show_disabled=true")
+            for (base in baseUrls) {
+                for (dk in devKeys) {
+                    val urls = mutableListOf<String>()
+                    if (!studentId.isNullOrBlank()) {
+                        urls.add("$base/apiv3/getperiods?devkey=$dk&out_format=json$tokenParam$vendorParam&weeks=true&show_disabled=true&student=$studentId")
+                    }
+                    urls.add("$base/apiv3/getperiods?devkey=$dk&out_format=json$tokenParam$vendorParam&weeks=true&show_disabled=true")
 
-                for (url in urls) {
-                    try {
-                        val reqBuilder = Request.Builder()
-                            .url(url)
-                            .header("User-Agent", browserUserAgent)
-                        if (!cookies.isNullOrEmpty()) {
-                            reqBuilder.addHeader("Cookie", cookies)
-                        }
-
-                        val resp = client.newCall(reqBuilder.build()).execute()
-                        val body = resp.body?.string()
-                        if (resp.isSuccessful && !body.isNullOrEmpty()) {
-                            val json = JSONObject(body)
-                            val respObj = json.optJSONObject("response") ?: json
-                            if (respObj.optInt("state", 200) == 200) {
-                                val periods = parsePeriodsJson(respObj, studentId)
-                                if (periods.isNotEmpty()) {
-                                    return@withContext Result.success(periods)
+                    for (url in urls) {
+                        try {
+                            val req = buildRequest(url, cookies)
+                            val resp = client.newCall(req).execute()
+                            val body = resp.body?.string()
+                            if (resp.isSuccessful && !body.isNullOrEmpty()) {
+                                val json = JSONObject(body)
+                                val respObj = json.optJSONObject("response") ?: json
+                                if (respObj.optInt("state", 200) == 200) {
+                                    val periods = parsePeriodsJson(respObj, studentId)
+                                    if (periods.isNotEmpty()) {
+                                        return@withContext Result.success(periods)
+                                    }
                                 }
                             }
+                        } catch (e: Exception) {
+                            Log.w("EljurApiClient", "fetchPeriods error: ${e.message} for $url")
                         }
-                    } catch (e: Exception) {
-                        Log.w("EljurApiClient", "fetchPeriods error: ${e.message} for $url")
                     }
                 }
             }
@@ -583,50 +628,47 @@ class EljurApiClient(
             studentCandidates.add(null)
 
             var lastApiError: String? = null
+            val baseUrls = getBaseUrls(vendor)
 
-            for (dk in devKeys) {
-                for (cand in studentCandidates) {
-                    val candParam = if (cand != null) "&student=$cand" else ""
-                    val candidateUrls = listOf(
-                        "$baseUrl/apiv3/getdiary?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam&days=$targetDays&rings=true",
-                        "$baseUrl/apiv3/getdiary?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam&days=$targetDays",
-                        "$baseUrl/apiv3/getschedule?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam&days=$targetDays&rings=true",
-                        "$baseUrl/apiv3/getschedule?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam&rings=true"
-                    )
+            for (base in baseUrls) {
+                for (dk in devKeys) {
+                    for (cand in studentCandidates) {
+                        val candParam = if (cand != null) "&student=$cand" else ""
+                        val candidateUrls = listOf(
+                            "$base/apiv3/getdiary?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam&days=$targetDays&rings=true",
+                            "$base/apiv3/getdiary?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam&days=$targetDays",
+                            "$base/apiv3/getschedule?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam&days=$targetDays&rings=true",
+                            "$base/apiv3/getschedule?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam&rings=true"
+                        )
 
-                    for (url in candidateUrls) {
-                        try {
-                            val reqBuilder = Request.Builder()
-                                .url(url)
-                                .header("User-Agent", browserUserAgent)
-                            if (!cookies.isNullOrEmpty()) {
-                                reqBuilder.addHeader("Cookie", cookies)
-                            }
+                        for (url in candidateUrls) {
+                            try {
+                                val req = buildRequest(url, cookies)
+                                val response = client.newCall(req).execute()
+                                val body = response.body?.string()
 
-                            val response = client.newCall(reqBuilder.build()).execute()
-                            val body = response.body?.string()
-
-                            if (response.isSuccessful && !body.isNullOrEmpty()) {
-                                val json = JSONObject(body)
-                                val respObj = json.optJSONObject("response") ?: json
-                                if (respObj.optInt("state", 200) == 200) {
-                                    val parsedDays = parseApiDiaryDays(respObj, cand ?: studentId)
-                                    if (parsedDays.isNotEmpty()) {
-                                        return@withContext Result.success(parsedDays)
+                                if (response.isSuccessful && !body.isNullOrEmpty()) {
+                                    val json = JSONObject(body)
+                                    val respObj = json.optJSONObject("response") ?: json
+                                    if (respObj.optInt("state", 200) == 200) {
+                                        val parsedDays = parseApiDiaryDays(respObj, cand ?: studentId)
+                                        if (parsedDays.isNotEmpty()) {
+                                            return@withContext Result.success(parsedDays)
+                                        }
+                                    } else {
+                                        val err = respObj.optJSONObject("error")?.optString("message")
+                                            ?: "state=${respObj.optInt("state")}"
+                                        lastApiError = err
+                                        Log.w("EljurApiClient", "Diary API call returned error: $err for $url")
                                     }
                                 } else {
-                                    val err = respObj.optJSONObject("error")?.optString("message")
-                                        ?: "state=${respObj.optInt("state")}"
+                                    val err = "HTTP ${response.code}: ${body?.take(150)}"
                                     lastApiError = err
-                                    Log.w("EljurApiClient", "Diary API call returned error: $err for $url")
                                 }
-                            } else {
-                                val err = "HTTP ${response.code}: ${body?.take(150)}"
-                                lastApiError = err
+                            } catch (e: Exception) {
+                                lastApiError = e.message
+                                Log.w("EljurApiClient", "Exception querying diary API: ${e.message}")
                             }
-                        } catch (e: Exception) {
-                            lastApiError = e.message
-                            Log.w("EljurApiClient", "Exception querying diary API: ${e.message}")
                         }
                     }
                 }
@@ -713,44 +755,41 @@ class EljurApiClient(
             // Also fetch final/quarter marks in parallel or sequentially
             val finalMarksMap = fetchFinalAssessments(effectiveToken, vendor, studentId, cookies).getOrDefault(emptyMap())
 
-            for (dk in devKeys) {
-                for (cand in studentCandidates) {
-                    val candParam = if (cand != null) "&student=$cand" else ""
-                    for (range in targetRanges) {
-                        val daysParam = if (range != null) "&days=$range" else ""
-                        val url = "$baseUrl/apiv3/getmarks?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam$daysParam"
-                        try {
-                            val reqBuilder = Request.Builder()
-                                .url(url)
-                                .header("User-Agent", browserUserAgent)
-                            if (!cookies.isNullOrEmpty()) {
-                                reqBuilder.addHeader("Cookie", cookies)
-                            }
+            val baseUrls = getBaseUrls(vendor)
+            for (base in baseUrls) {
+                for (dk in devKeys) {
+                    for (cand in studentCandidates) {
+                        val candParam = if (cand != null) "&student=$cand" else ""
+                        for (range in targetRanges) {
+                            val daysParam = if (range != null) "&days=$range" else ""
+                            val url = "$base/apiv3/getmarks?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam$daysParam"
+                            try {
+                                val req = buildRequest(url, cookies)
+                                val response = client.newCall(req).execute()
+                                val body = response.body?.string()
 
-                            val response = client.newCall(reqBuilder.build()).execute()
-                            val body = response.body?.string()
+                                if (response.isSuccessful && !body.isNullOrEmpty()) {
+                                    val json = JSONObject(body)
+                                    val respObj = json.optJSONObject("response") ?: json
+                                    if (respObj.optInt("state", 200) == 200) {
+                                        val marks = parseApiMarks(respObj, cand ?: studentId)
+                                        if (marks.isNotEmpty()) {
+                                            // Merge final marks from getfinalassessments if available
+                                            val enrichedMarks = if (finalMarksMap.isNotEmpty()) {
+                                                marks.map { subj ->
+                                                    val fm = subj.finalMark ?: finalMarksMap[subj.subject]
+                                                    subj.copy(finalMark = fm)
+                                                }
+                                            } else marks
 
-                            if (response.isSuccessful && !body.isNullOrEmpty()) {
-                                val json = JSONObject(body)
-                                val respObj = json.optJSONObject("response") ?: json
-                                if (respObj.optInt("state", 200) == 200) {
-                                    val marks = parseApiMarks(respObj, cand ?: studentId)
-                                    if (marks.isNotEmpty()) {
-                                        // Merge final marks from getfinalassessments if available
-                                        val enrichedMarks = if (finalMarksMap.isNotEmpty()) {
-                                            marks.map { subj ->
-                                                val fm = subj.finalMark ?: finalMarksMap[subj.subject]
-                                                subj.copy(finalMark = fm)
-                                            }
-                                        } else marks
-
-                                        Log.d("EljurApiClient", "Successfully fetched ${enrichedMarks.size} subjects from $url")
-                                        return@withContext Result.success(enrichedMarks)
+                                            Log.d("EljurApiClient", "Successfully fetched ${enrichedMarks.size} subjects from $url")
+                                            return@withContext Result.success(enrichedMarks)
+                                        }
                                     }
                                 }
+                            } catch (e: Exception) {
+                                Log.w("EljurApiClient", "Marks API candidate failed: ${e.message} for $url")
                             }
-                        } catch (e: Exception) {
-                            Log.w("EljurApiClient", "Marks API candidate failed: ${e.message} for $url")
                         }
                     }
                 }
@@ -1004,31 +1043,29 @@ class EljurApiClient(
             }
             studentCandidates.add(null)
 
-            for (dk in devKeys) {
-                for (cand in studentCandidates) {
-                    val candParam = if (cand != null) "&student=$cand" else ""
-                    val url = "$baseUrl/apiv3/getfinalassessments?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam"
-                    try {
-                        val reqBuilder = Request.Builder()
-                            .url(url)
-                            .header("User-Agent", browserUserAgent)
-                        if (!cookies.isNullOrEmpty()) {
-                            reqBuilder.addHeader("Cookie", cookies)
-                        }
-                        val resp = client.newCall(reqBuilder.build()).execute()
-                        val body = resp.body?.string()
-                        if (resp.isSuccessful && !body.isNullOrEmpty()) {
-                            val json = JSONObject(body)
-                            val respObj = json.optJSONObject("response") ?: json
-                            if (respObj.optInt("state", 200) == 200) {
-                                val finalMarks = parseFinalAssessmentsJson(respObj, cand ?: studentId)
-                                if (finalMarks.isNotEmpty()) {
-                                    return@withContext Result.success(finalMarks)
+            val baseUrls = getBaseUrls(vendor)
+            for (base in baseUrls) {
+                for (dk in devKeys) {
+                    for (cand in studentCandidates) {
+                        val candParam = if (cand != null) "&student=$cand" else ""
+                        val url = "$base/apiv3/getfinalassessments?devkey=$dk&out_format=json$tokenParam$vendorParam$candParam"
+                        try {
+                            val req = buildRequest(url, cookies)
+                            val resp = client.newCall(req).execute()
+                            val body = resp.body?.string()
+                            if (resp.isSuccessful && !body.isNullOrEmpty()) {
+                                val json = JSONObject(body)
+                                val respObj = json.optJSONObject("response") ?: json
+                                if (respObj.optInt("state", 200) == 200) {
+                                    val finalMarks = parseFinalAssessmentsJson(respObj, cand ?: studentId)
+                                    if (finalMarks.isNotEmpty()) {
+                                        return@withContext Result.success(finalMarks)
+                                    }
                                 }
                             }
+                        } catch (e: Exception) {
+                            Log.w("EljurApiClient", "fetchFinalAssessments error: ${e.message} for $url")
                         }
-                    } catch (e: Exception) {
-                        Log.w("EljurApiClient", "fetchFinalAssessments error: ${e.message} for $url")
                     }
                 }
             }
@@ -1151,11 +1188,7 @@ class EljurApiClient(
             candidateUrls.add("$baseUrl/journal-app")
 
             for (targetUrl in candidateUrls) {
-                val req = Request.Builder()
-                    .url(targetUrl)
-                    .header("User-Agent", browserUserAgent)
-                    .addHeader("Cookie", cookies)
-                    .build()
+                val req = buildRequest(targetUrl, cookies, isJson = false)
                 val resp = client.newCall(req).execute()
                 val html = resp.body?.string() ?: continue
 
@@ -1462,11 +1495,7 @@ class EljurApiClient(
             candidateUrls.add("$baseUrl/journal-student")
 
             for (targetUrl in candidateUrls) {
-                val request = Request.Builder()
-                    .url(targetUrl)
-                    .header("User-Agent", browserUserAgent)
-                    .addHeader("Cookie", cookies)
-                    .build()
+                val request = buildRequest(targetUrl, cookies, isJson = false)
                 val response = client.newCall(request).execute()
                 val html = response.body?.string() ?: continue
 
