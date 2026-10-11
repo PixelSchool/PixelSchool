@@ -24,61 +24,132 @@ class EljurApiClient(
 
     private val baseUrl = "https://edu.rk.gov.ru"
 
-    suspend fun fetchSessionFromVToken(vToken: String): Result<UserSession> = withContext(Dispatchers.IO) {
+    /**
+     * Resolves user session either from v_token or directly from web session cookies
+     */
+    suspend fun resolveSession(
+        tokenOrVToken: String?,
+        cookies: String?,
+        fallbackUserName: String? = null
+    ): Result<UserSession> = withContext(Dispatchers.IO) {
         try {
-            val url = "$baseUrl/apiv3/getusersvendors?out_format=json&v_token=$vToken&auth_token=true"
-            val request = Request.Builder().url(url).build()
-            val response = client.newCall(request).execute()
-            val body = response.body?.string() ?: return@withContext Result.failure(Exception("Пустой ответ сервера"))
+            // Attempt 1: If we have v_token, exchange via /apiv3/getusersvendors
+            if (!tokenOrVToken.isNullOrEmpty() && tokenOrVToken != "web_session") {
+                val vTokenUrl = "$baseUrl/apiv3/getusersvendors?out_format=json&v_token=$tokenOrVToken&auth_token=true"
+                val req = Request.Builder().url(vTokenUrl).apply {
+                    if (!cookies.isNullOrEmpty()) addHeader("Cookie", cookies)
+                }.build()
 
-            val json = JSONObject(body)
-            val resultArr = json.optJSONArray("result")
-            if (resultArr != null && resultArr.length() > 0) {
-                val firstUser = resultArr.getJSONObject(0)
-                val token = firstUser.getString("token")
-                val vendor = firstUser.optString("vendor", "edu")
-                val login = firstUser.optString("login", "")
-                val userTitle = firstUser.optString("user_title", "")
-                val vendorTitle = firstUser.optString("vendor_title", "")
+                val resp = client.newCall(req).execute()
+                val body = resp.body?.string()
+                if (resp.isSuccessful && !body.isNullOrEmpty()) {
+                    val json = JSONObject(body)
+                    val resultArr = json.optJSONArray("result")
+                    if (resultArr != null && resultArr.length() > 0) {
+                        val firstUser = resultArr.getJSONObject(0)
+                        return@withContext Result.success(
+                            UserSession(
+                                token = firstUser.getString("token"),
+                                vendor = firstUser.optString("vendor", "edu"),
+                                login = firstUser.optString("login", ""),
+                                userTitle = firstUser.optString("user_title", fallbackUserName ?: "Ученик"),
+                                schoolTitle = firstUser.optString("vendor_title", "ГИС РК «Образование»")
+                            )
+                        )
+                    }
+                }
+            }
+
+            // Attempt 2: If we have session cookies, query /apiv3/getusersvendors directly with cookies
+            if (!cookies.isNullOrEmpty()) {
+                val cookieReq = Request.Builder()
+                    .url("$baseUrl/apiv3/getusersvendors?out_format=json&auth_token=true")
+                    .addHeader("Cookie", cookies)
+                    .build()
+                val cookieResp = client.newCall(cookieReq).execute()
+                val cookieBody = cookieResp.body?.string()
+                if (cookieResp.isSuccessful && !cookieBody.isNullOrEmpty()) {
+                    val json = JSONObject(cookieBody)
+                    val resultArr = json.optJSONArray("result")
+                    if (resultArr != null && resultArr.length() > 0) {
+                        val firstUser = resultArr.getJSONObject(0)
+                        return@withContext Result.success(
+                            UserSession(
+                                token = firstUser.getString("token"),
+                                vendor = firstUser.optString("vendor", "edu"),
+                                login = firstUser.optString("login", ""),
+                                userTitle = firstUser.optString("user_title", fallbackUserName ?: "Ученик"),
+                                schoolTitle = firstUser.optString("vendor_title", "ГИС РК «Образование»")
+                            )
+                        )
+                    }
+                }
+
+                // Attempt 3: Scrape profile info from /journal-app
+                val profileResult = scrapeUserProfile(cookies)
                 return@withContext Result.success(
                     UserSession(
-                        token = token,
-                        vendor = vendor,
-                        login = login,
-                        userTitle = userTitle,
-                        schoolTitle = vendorTitle
+                        token = tokenOrVToken ?: "web_session",
+                        vendor = "edu",
+                        login = "",
+                        userTitle = profileResult.first.ifBlank { fallbackUserName ?: "Ученик" },
+                        schoolTitle = profileResult.second.ifBlank { "ГИС РК «Образование»" }
                     )
                 )
-            } else {
-                return@withContext Result.failure(Exception(json.optString("error", "Не удалось извлечь токен")))
             }
+
+            Result.failure(Exception("Не удалось получить сессию пользователя"))
         } catch (e: Exception) {
             Result.failure(e)
         }
     }
 
-    suspend fun fetchDiary(token: String, vendor: String = "edu", cookies: String? = null): Result<List<DaySchedule>> = withContext(Dispatchers.IO) {
-        try {
-            val url = "$baseUrl/apiv3/getdiary?auth_token=$token&vendor=$vendor&out_format=json&rings=yes"
-            val reqBuilder = Request.Builder().url(url)
-            if (!cookies.isNullOrEmpty()) {
-                reqBuilder.addHeader("Cookie", cookies)
-            }
-            val response = client.newCall(reqBuilder.build()).execute()
-            val body = response.body?.string()
+    private fun scrapeUserProfile(cookies: String): Pair<String, String> {
+        return try {
+            val req = Request.Builder()
+                .url("$baseUrl/journal-app")
+                .addHeader("Cookie", cookies)
+                .build()
+            val resp = client.newCall(req).execute()
+            val html = resp.body?.string() ?: return "" to ""
+            val doc = Jsoup.parse(html)
+            val name = doc.selectFirst(".user-name, .b-dropdown__user, .header-user__name, .m-user__name")?.text()?.trim() ?: ""
+            val school = doc.selectFirst(".school-title, .header-school__title, .m-logo__subtitle")?.text()?.trim() ?: "Республика Крым"
+            name to school
+        } catch (_: Exception) {
+            "" to ""
+        }
+    }
 
-            if (response.isSuccessful && !body.isNullOrEmpty()) {
-                val json = JSONObject(body)
-                val respObj = json.optJSONObject("response")
-                if (respObj != null && respObj.optInt("state") == 200) {
-                    val days = parseApiDiaryDays(respObj)
-                    if (days.isNotEmpty()) {
-                        return@withContext Result.success(days)
+    suspend fun fetchDiary(
+        token: String,
+        vendor: String = "edu",
+        cookies: String? = null
+    ): Result<List<DaySchedule>> = withContext(Dispatchers.IO) {
+        try {
+            // First try API if we have an API token
+            if (token.isNotBlank() && token != "web_session") {
+                val url = "$baseUrl/apiv3/getdiary?auth_token=$token&vendor=$vendor&out_format=json&rings=yes"
+                val reqBuilder = Request.Builder().url(url)
+                if (!cookies.isNullOrEmpty()) {
+                    reqBuilder.addHeader("Cookie", cookies)
+                }
+                val response = client.newCall(reqBuilder.build()).execute()
+                val body = response.body?.string()
+
+                if (response.isSuccessful && !body.isNullOrEmpty()) {
+                    val json = JSONObject(body)
+                    val respObj = json.optJSONObject("response")
+                    if (respObj != null && respObj.optInt("state") == 200) {
+                        val days = parseApiDiaryDays(respObj)
+                        if (days.isNotEmpty()) {
+                            return@withContext Result.success(days)
+                        }
                     }
                 }
             }
 
-            // Fallback: Web parser for /journal-app/
+            // Web fallback: parse /journal-app/week.0
             if (!cookies.isNullOrEmpty()) {
                 val webDays = fetchDiaryFromWeb(cookies)
                 if (webDays.isSuccess && webDays.getOrNull()?.isNotEmpty() == true) {
@@ -169,7 +240,7 @@ class EljurApiClient(
         return list
     }
 
-    private fun fetchDiaryFromWeb(cookies: String): Result<List<DaySchedule>> {
+    fun fetchDiaryFromWeb(cookies: String): Result<List<DaySchedule>> {
         return try {
             val request = Request.Builder()
                 .url("$baseUrl/journal-app/week.0")

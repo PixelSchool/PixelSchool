@@ -66,7 +66,7 @@ fun MainAppScreen(
     if (session == null) {
         AuthScreen(
             onLoginDemo = { viewModel.loginDemo() },
-            onLoginWithToken = { token, cookies -> viewModel.loginWithVToken(token, cookies) },
+            onLoginWithSession = { token, cookies, user -> viewModel.loginWithWebSession(token, cookies, user) },
             isLoading = isLoading,
             errorMessage = errorMessage
         )
