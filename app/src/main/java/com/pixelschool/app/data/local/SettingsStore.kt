@@ -1,0 +1,39 @@
+package com.pixelschool.app.data.local
+
+import android.content.Context
+import android.content.SharedPreferences
+import androidx.compose.ui.graphics.Color
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+
+enum class AppThemePalette(val title: String, val previewColor: Color) {
+    DYNAMIC("Системная (Material You)", Color(0xFF6750A4)),
+    COBALT("Сапфир (Cobalt)", Color(0xFF1E56A0)),
+    EMERALD("Изумруд (Emerald)", Color(0xFF00796B)),
+    VIOLET("Фиолетовый (Violet)", Color(0xFF7C3AED)),
+    AMBER("Янтарь (Sunset Amber)", Color(0xFFD97706)),
+    ROSE("Розе (Coral Rose)", Color(0xFFBE185D))
+}
+
+class SettingsStore(context: Context) {
+    private val prefs: SharedPreferences =
+        context.getSharedPreferences("pixel_school_settings", Context.MODE_PRIVATE)
+
+    private val _themePalette = MutableStateFlow(loadThemePalette())
+    val themePalette: StateFlow<AppThemePalette> = _themePalette.asStateFlow()
+
+    private fun loadThemePalette(): AppThemePalette {
+        val savedName = prefs.getString("key_theme_palette", AppThemePalette.DYNAMIC.name)
+        return try {
+            AppThemePalette.valueOf(savedName ?: AppThemePalette.DYNAMIC.name)
+        } catch (_: Exception) {
+            AppThemePalette.DYNAMIC
+        }
+    }
+
+    fun setThemePalette(palette: AppThemePalette) {
+        prefs.edit().putString("key_theme_palette", palette.name).apply()
+        _themePalette.value = palette
+    }
+}

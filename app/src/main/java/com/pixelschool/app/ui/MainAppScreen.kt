@@ -2,6 +2,8 @@ package com.pixelschool.app.ui
 
 import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -51,6 +53,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material.icons.rounded.Palette
+import com.pixelschool.app.data.local.AppThemePalette
+import com.pixelschool.app.data.local.SettingsStore
 import com.pixelschool.app.data.model.ProfileUiState
 import com.pixelschool.app.data.model.UserSession
 import com.pixelschool.app.ui.navigation.Screen
@@ -64,6 +71,7 @@ import com.pixelschool.app.viewmodel.MainViewModel
 @Composable
 fun MainAppScreen(
     viewModel: MainViewModel,
+    settingsStore: SettingsStore? = null,
     modifier: Modifier = Modifier
 ) {
     val session by viewModel.session.collectAsState()
@@ -243,6 +251,7 @@ fun MainAppScreen(
                         ProfileScreen(
                             profile = profileState,
                             updateInfo = updateInfo,
+                            settingsStore = settingsStore,
                             onCheckUpdates = { viewModel.checkForUpdates() },
                             onLogout = { viewModel.logout() }
                         )
@@ -259,6 +268,7 @@ fun MainAppScreen(
 fun ProfileScreen(
     profile: ProfileUiState,
     updateInfo: com.pixelschool.app.data.remote.AppUpdateInfo? = null,
+    settingsStore: SettingsStore? = null,
     onCheckUpdates: () -> Unit = {},
     onLogout: () -> Unit,
     modifier: Modifier = Modifier
@@ -275,6 +285,7 @@ fun ProfileScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
+            .verticalScroll(rememberScrollState())
             .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -390,6 +401,81 @@ fun ProfileScreen(
         }
 
         Spacer(modifier = Modifier.height(14.dp))
+
+        if (settingsStore != null) {
+            val currentPalette by settingsStore.themePalette.collectAsState()
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(22.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f)
+                )
+            ) {
+                Column(modifier = Modifier.padding(18.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Palette,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Text(
+                            text = "Цветовая тема (Material 3)",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Приятные акцентные цвета для Material 3 Expressive",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        AppThemePalette.values().forEach { palette ->
+                            val isSelected = currentPalette == palette
+                            Surface(
+                                shape = RoundedCornerShape(16.dp),
+                                color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
+                                modifier = Modifier
+                                    .clickable { settingsStore.setThemePalette(palette) }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(20.dp)
+                                            .clip(RoundedCornerShape(10.dp))
+                                            .background(palette.previewColor)
+                                    )
+                                    Text(
+                                        text = palette.title.substringBefore(" ("),
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                        color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+        }
 
         Card(
             modifier = Modifier.fillMaxWidth(),

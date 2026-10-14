@@ -11,6 +11,7 @@ import com.pixelschool.app.data.model.Mark
 import com.pixelschool.app.data.model.PeriodMarks
 import com.pixelschool.app.data.model.SubjectSummary
 import com.pixelschool.app.data.model.UserSession
+import com.pixelschool.app.data.model.sortedByTime
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -27,7 +28,7 @@ import java.util.concurrent.TimeUnit
 class SessionExpiredException(message: String = "Сессия устарела. Требуется повторный вход.") : Exception(message)
 
 class EljurApiClient(
-    private val client: OkHttpClient = RussianTrustManager.createOkHttpClient()
+    private val client: OkHttpClient = RussianTrustManager.defaultOkHttpClient
 ) {
 
     private val baseUrl = "https://edu.rk.gov.ru"
@@ -87,23 +88,27 @@ class EljurApiClient(
         return request
     }
 
+    private fun maskSensitiveQuery(query: String?): String {
+        if (query.isNullOrBlank()) return "none"
+        return query.replace(Regex("""(?i)(auth_token|v_token|devkey)=([^&]+)"""), "$1=***")
+    }
+
     private fun logRequest(req: Request) {
         val maskedCookies = req.header("Cookie")?.let { "[cookies present, len=${it.length}]" } ?: "none"
-        val query = req.url.query ?: "none"
+        val query = maskSensitiveQuery(req.url.query)
         Log.d(TAG, "--> ${req.method} ${req.url.scheme}://${req.url.host}${req.url.encodedPath} (query: $query, cookies: $maskedCookies)")
     }
 
     private fun logResponseError(req: Request, resp: okhttp3.Response, body: String?) {
         val contentType = resp.header("Content-Type") ?: "unknown"
-        val query = req.url.query ?: "none"
+        val query = maskSensitiveQuery(req.url.query)
         val headers = req.headers.names().joinToString(", ") { name ->
             if (name.equals("Cookie", ignoreCase = true)) "Cookie=[MASKED]" else "$name=${req.header(name)}"
         }
         val preview = body?.take(300)?.replace("\n", " ") ?: ""
         Log.e(
             TAG,
-            "<-- HTTP ${resp.code} for ${req.method} ${req.url}\n" +
-            "    Host: ${req.url.host}, Path: ${req.url.encodedPath}\n" +
+            "<-- HTTP ${resp.code} for ${req.method} ${req.url.scheme}://${req.url.host}${req.url.encodedPath}\n" +
             "    Query: $query\n" +
             "    Request Headers: [$headers]\n" +
             "    Response Content-Type: $contentType\n" +
@@ -2392,7 +2397,7 @@ class EljurApiClient(
             } else {
                 val itemsObj = dayData.optJSONObject("items")
                 if (itemsObj != null) {
-                    val sortedItemKeys = itemsObj.keys().asSequence().sorted().toList()
+                    val sortedItemKeys = itemsObj.keys().asSequence().sortedWith(compareBy { it.toIntOrNull() ?: Int.MAX_VALUE }).toList()
                     for (k in sortedItemKeys) {
                         val itm = itemsObj.optJSONObject(k)
                         if (itm != null) itemObjects.add(itm)
@@ -2413,16 +2418,34 @@ class EljurApiClient(
                 val assessmentsArr = item.optJSONArray("assessments") ?: item.optJSONArray("marks")
                 val assessmentsObj = item.optJSONObject("assessments") ?: item.optJSONObject("marks")
 
+                fun extractMarkComment(a: JSONObject): String? {
+                    return a.optString("comment").ifBlank {
+                        a.optString("control_type").ifBlank {
+                            a.optString("lesson_comment").ifBlank {
+                                a.optString("type").ifBlank {
+                                    a.optString("work_type").ifBlank {
+                                        a.optString("description").ifBlank { null }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
                 if (assessmentsArr != null) {
                     for (i in 0 until assessmentsArr.length()) {
                         val a = assessmentsArr.optJSONObject(i)
                         if (a != null) {
+                            val markComment = extractMarkComment(a)
+                            val isCtrl = a.optBoolean("is_control", false) ||
+                                    a.optString("control_type_short").isNotBlank() ||
+                                    (markComment?.contains("контроль", ignoreCase = true) == true)
                             marksList.add(
                                 Mark(
                                     value = a.optString("value", ""),
                                     weight = a.optInt("weight", 1),
-                                    comment = if (a.has("comment") && !a.isNull("comment")) a.getString("comment") else null,
-                                    isControl = a.optBoolean("is_control", false)
+                                    comment = markComment,
+                                    isControl = isCtrl
                                 )
                             )
                         } else {
@@ -2434,12 +2457,16 @@ class EljurApiClient(
                     for (k in assessmentsObj.keys()) {
                         val a = assessmentsObj.optJSONObject(k)
                         if (a != null) {
+                            val markComment = extractMarkComment(a)
+                            val isCtrl = a.optBoolean("is_control", false) ||
+                                    a.optString("control_type_short").isNotBlank() ||
+                                    (markComment?.contains("контроль", ignoreCase = true) == true)
                             marksList.add(
                                 Mark(
                                     value = a.optString("value", ""),
                                     weight = a.optInt("weight", 1),
-                                    comment = if (a.has("comment") && !a.isNull("comment")) a.getString("comment") else null,
-                                    isControl = a.optBoolean("is_control", false)
+                                    comment = markComment,
+                                    isControl = isCtrl
                                 )
                             )
                         } else {
@@ -2507,7 +2534,7 @@ class EljurApiClient(
                 DaySchedule(
                     date = displayDate,
                     dayOfWeek = displayDayOfWeek,
-                    lessons = lessons,
+                    lessons = lessons.sortedByTime(),
                     isHoliday = isHoliday,
                     holidayName = holidayName
                 )
@@ -2673,7 +2700,7 @@ class EljurApiClient(
                 DaySchedule(
                     date = date.ifBlank { titleText },
                     dayOfWeek = dayOfWeek.ifBlank { "День" },
-                    lessons = lessons,
+                    lessons = lessons.sortedByTime(),
                     isHoliday = isHoliday,
                     holidayName = holidayName
                 )

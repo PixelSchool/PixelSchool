@@ -2,9 +2,7 @@ package com.pixelschool.app.ui.screens
 
 import android.annotation.SuppressLint
 import android.graphics.Bitmap
-import android.net.http.SslError
 import android.webkit.CookieManager
-import android.webkit.SslErrorHandler
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -421,21 +419,7 @@ fun GosuslugiAuthDialog(
                                     super.onPageFinished(view, url)
                                     checkAndCapture(url, isPageFinished = true)
                                 }
-
-                                override fun onReceivedSslError(view: WebView?, handler: SslErrorHandler?, error: SslError?) {
-                                    val failingUrl = error?.url.orEmpty()
-                                    // Bypass SSL errors for Russian Root CA / regional portal domains
-                                    if (failingUrl.contains("rk.gov.ru") ||
-                                        failingUrl.contains("gosuslugi.ru") ||
-                                        failingUrl.contains("eljur.ru") ||
-                                        failingUrl.contains("gu-st.ru")
-                                    ) {
-                                        handler?.proceed()
-                                    } else {
-                                        super.onReceivedSslError(view, handler, error)
-                                    }
                                 }
-                            }
 
                             // Regional Crimean portal ESIA authorization entrypoint
                             loadUrl("https://edu.rk.gov.ru/journal-esia-action/", chromeHeaders)

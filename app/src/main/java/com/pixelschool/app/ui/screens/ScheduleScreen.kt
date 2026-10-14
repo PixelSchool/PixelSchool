@@ -51,9 +51,16 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.pixelschool.app.data.model.DaySchedule
 import com.pixelschool.app.data.model.Lesson
+import com.pixelschool.app.data.model.sortedByTime
 import com.pixelschool.app.ui.components.AttachmentChip
 import com.pixelschool.app.ui.components.ExpressiveGradeBadge
 import com.pixelschool.app.ui.components.LessonExpressiveCard
+
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -66,8 +73,24 @@ fun ScheduleScreen(
     onResetWeekOffset: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    val selectedDay = schedule.getOrNull(selectedDayIndex)
+    val coroutineScope = rememberCoroutineScope()
     var selectedLesson by remember { mutableStateOf<Lesson?>(null) }
+
+    val pagerState = rememberPagerState(
+        initialPage = selectedDayIndex.coerceIn(0, (schedule.size - 1).coerceAtLeast(0))
+    ) { schedule.size }
+
+    LaunchedEffect(selectedDayIndex, schedule.size) {
+        if (schedule.isNotEmpty() && selectedDayIndex in schedule.indices && pagerState.currentPage != selectedDayIndex) {
+            pagerState.animateScrollToPage(selectedDayIndex)
+        }
+    }
+
+    LaunchedEffect(pagerState.currentPage) {
+        if (schedule.isNotEmpty() && pagerState.currentPage in schedule.indices && pagerState.currentPage != selectedDayIndex) {
+            onSelectDay(pagerState.currentPage)
+        }
+    }
 
     Column(
         modifier = modifier
@@ -160,7 +183,12 @@ fun ScheduleScreen(
                     color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHighest,
                     modifier = Modifier
                         .height(48.dp)
-                        .clickable { onSelectDay(index) }
+                        .clickable {
+                            onSelectDay(index)
+                            coroutineScope.launch {
+                                pagerState.animateScrollToPage(index)
+                            }
+                        }
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
@@ -203,7 +231,7 @@ fun ScheduleScreen(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        if (selectedDay == null || selectedDay.isHoliday || selectedDay.lessons.isEmpty()) {
+        if (schedule.isEmpty()) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -217,7 +245,7 @@ fun ScheduleScreen(
                         modifier = Modifier.padding(16.dp)
                     ) {
                         Icon(
-                            imageVector = if (selectedDay?.isHoliday == true) Icons.Rounded.Celebration else Icons.Rounded.DateRange,
+                            imageVector = Icons.Rounded.DateRange,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.onSecondaryContainer,
                             modifier = Modifier
@@ -227,66 +255,105 @@ fun ScheduleScreen(
                         )
                     }
                     Text(
-                        text = selectedDay?.holidayName ?: "В этот день уроков нет",
+                        text = "Расписание не загружено",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(
-                        text = "Отдыхайте и набирайтесь сил перед новой учебной неделей",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center
-                    )
                 }
             }
         } else {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                item {
-                    Row(
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.fillMaxSize()
+            ) { page ->
+                val currentDay = schedule.getOrNull(page)
+                if (currentDay == null || currentDay.isHoliday || currentDay.lessons.isEmpty()) {
+                    Box(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                            .fillMaxSize()
+                            .padding(32.dp),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Text(
-                            text = "${selectedDay.dayOfWeek}, ${selectedDay.date}",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = MaterialTheme.colorScheme.primaryContainer
-                        ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Surface(
+                                shape = RoundedCornerShape(28.dp),
+                                color = MaterialTheme.colorScheme.secondaryContainer,
+                                modifier = Modifier.padding(16.dp)
+                            ) {
+                                Icon(
+                                    imageVector = if (currentDay?.isHoliday == true) Icons.Rounded.Celebration else Icons.Rounded.DateRange,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    modifier = Modifier
+                                        .padding(24.dp)
+                                        .height(48.dp)
+                                        .width(48.dp)
+                                )
+                            }
                             Text(
-                                text = "${selectedDay.lessons.size} уроков",
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                                text = currentDay?.holidayName ?: "В этот день уроков нет",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = "Отдыхайте и набирайтесь сил перед новой учебной неделей",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center
                             )
                         }
                     }
-                }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        item {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "${currentDay.dayOfWeek}, ${currentDay.date}",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = MaterialTheme.colorScheme.primaryContainer
+                                ) {
+                                    Text(
+                                        text = "${currentDay.lessons.size} уроков",
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                }
+                            }
+                        }
 
-                itemsIndexed(
-                    items = selectedDay.lessons,
-                    key = { index, lesson -> "${lesson.num}_${lesson.subject}_${lesson.startTime}_$index" }
-                ) { _, lesson ->
-                    LessonExpressiveCard(
-                        lesson = lesson,
-                        onClick = { selectedLesson = lesson }
-                    )
-                }
+                        itemsIndexed(
+                            items = currentDay.lessons.sortedByTime(),
+                            key = { index, lesson -> "${lesson.num}_${lesson.subject}_${lesson.startTime}_$index" }
+                        ) { _, lesson ->
+                            LessonExpressiveCard(
+                                lesson = lesson,
+                                onClick = { selectedLesson = lesson }
+                            )
+                        }
 
-                item {
-                    Spacer(modifier = Modifier.height(80.dp))
+                        item {
+                            Spacer(modifier = Modifier.height(80.dp))
+                        }
+                    }
                 }
             }
         }
@@ -499,57 +566,81 @@ fun LessonDetailBottomSheet(
                     if (lesson.marks.isNotEmpty()) {
                         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             lesson.marks.forEach { mark ->
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                Surface(
+                                    shape = RoundedCornerShape(16.dp),
+                                    color = MaterialTheme.colorScheme.surface,
+                                    modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    ExpressiveGradeBadge(
-                                        value = mark.value,
-                                        isLarge = true
-                                    )
+                                    Row(
+                                        modifier = Modifier.padding(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                    ) {
+                                        ExpressiveGradeBadge(
+                                            value = mark.value,
+                                            isLarge = true
+                                        )
 
-                                    Column {
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                        ) {
-                                            if (mark.weight > 1) {
-                                                Surface(
-                                                    shape = RoundedCornerShape(6.dp),
-                                                    color = MaterialTheme.colorScheme.secondaryContainer
-                                                ) {
-                                                    Text(
-                                                        text = "×${mark.weight}",
-                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                                        style = MaterialTheme.typography.labelSmall,
-                                                        fontWeight = FontWeight.Bold,
-                                                        color = MaterialTheme.colorScheme.onSecondaryContainer
-                                                    )
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                            ) {
+                                                if (mark.weight > 1) {
+                                                    Surface(
+                                                        shape = RoundedCornerShape(6.dp),
+                                                        color = MaterialTheme.colorScheme.secondaryContainer
+                                                    ) {
+                                                        Text(
+                                                            text = "Вес ×${mark.weight}",
+                                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                                            style = MaterialTheme.typography.labelSmall,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                                                        )
+                                                    }
+                                                }
+                                                if (mark.isControl) {
+                                                    Surface(
+                                                        shape = RoundedCornerShape(6.dp),
+                                                        color = MaterialTheme.colorScheme.errorContainer
+                                                    ) {
+                                                        Text(
+                                                            text = "Контрольная работа",
+                                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                                            style = MaterialTheme.typography.labelSmall,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = MaterialTheme.colorScheme.onErrorContainer
+                                                        )
+                                                    }
                                                 }
                                             }
-                                            if (mark.isControl) {
-                                                Surface(
-                                                    shape = RoundedCornerShape(6.dp),
-                                                    color = MaterialTheme.colorScheme.errorContainer
-                                                ) {
+
+                                            val commentText = mark.comment?.takeIf { it.isNotBlank() }
+                                            if (commentText != null) {
+                                                Spacer(modifier = Modifier.height(4.dp))
+                                                Row(verticalAlignment = Alignment.Top) {
                                                     Text(
-                                                        text = "Контрольная",
-                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                                        style = MaterialTheme.typography.labelSmall,
+                                                        text = "За что: ",
+                                                        style = MaterialTheme.typography.bodyMedium,
                                                         fontWeight = FontWeight.Bold,
-                                                        color = MaterialTheme.colorScheme.onErrorContainer
+                                                        color = MaterialTheme.colorScheme.primary
+                                                    )
+                                                    Text(
+                                                        text = commentText,
+                                                        style = MaterialTheme.typography.bodyMedium,
+                                                        fontWeight = FontWeight.Medium,
+                                                        color = MaterialTheme.colorScheme.onSurface
                                                     )
                                                 }
+                                            } else if (!mark.isControl && mark.weight == 1) {
+                                                Spacer(modifier = Modifier.height(2.dp))
+                                                Text(
+                                                    text = "Ответ на уроке",
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
                                             }
-                                        }
-
-                                        if (!mark.comment.isNullOrBlank()) {
-                                            Spacer(modifier = Modifier.height(2.dp))
-                                            Text(
-                                                text = mark.comment,
-                                                style = MaterialTheme.typography.bodyMedium,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
                                         }
                                     }
                                 }

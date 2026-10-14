@@ -6,6 +6,11 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -74,10 +79,8 @@ object HomeworkDateUtils {
 
     fun calculateDefaultDayIndex(now: LocalDate = LocalDate.now()): Int {
         return when (now.dayOfWeek) {
-            DayOfWeek.SATURDAY -> 5
             DayOfWeek.SUNDAY -> 0
-            DayOfWeek.FRIDAY -> 5
-            else -> (now.plusDays(1).dayOfWeek.value - 1).coerceIn(0, 5)
+            else -> (now.dayOfWeek.value - 1).coerceIn(0, 5)
         }
     }
 
@@ -152,6 +155,7 @@ fun HomeworkScreen(
     schedule: List<DaySchedule> = emptyList(),
     modifier: Modifier = Modifier
 ) {
+    val coroutineScope = rememberCoroutineScope()
     val monday = remember(weekOffset) {
         HomeworkDateUtils.getMondayForOffset(weekOffset)
     }
@@ -160,16 +164,26 @@ fun HomeworkScreen(
         mutableIntStateOf(HomeworkDateUtils.calculateDefaultDayIndex())
     }
 
+    val pagerState = rememberPagerState(
+        initialPage = selectedDayIndex.coerceIn(0, 5)
+    ) { 6 }
+
+    LaunchedEffect(selectedDayIndex) {
+        if (pagerState.currentPage != selectedDayIndex) {
+            pagerState.animateScrollToPage(selectedDayIndex)
+        }
+    }
+
+    LaunchedEffect(pagerState.currentPage) {
+        if (selectedDayIndex != pagerState.currentPage) {
+            selectedDayIndex = pagerState.currentPage
+        }
+    }
+
     var statusFilter by remember { mutableStateOf(HomeworkStatusFilter.ALL) }
 
     val dayHomeworkList = remember(homeworkList, selectedDayIndex, monday, schedule) {
         homeworkList.filter { HomeworkDateUtils.matchesDay(it, selectedDayIndex, monday, schedule) }
-    }
-
-    val finalFilteredList = when (statusFilter) {
-        HomeworkStatusFilter.ALL -> dayHomeworkList
-        HomeworkStatusFilter.PENDING -> dayHomeworkList.filter { !it.isCompleted }
-        HomeworkStatusFilter.COMPLETED -> dayHomeworkList.filter { it.isCompleted }
     }
 
     val completedCount = dayHomeworkList.count { it.isCompleted }
@@ -212,6 +226,9 @@ fun HomeworkScreen(
                     .clickable {
                         onResetWeekOffset()
                         selectedDayIndex = HomeworkDateUtils.calculateDefaultDayIndex()
+                        coroutineScope.launch {
+                            pagerState.animateScrollToPage(selectedDayIndex)
+                        }
                     }
             ) {
                 Box(
@@ -231,6 +248,9 @@ fun HomeworkScreen(
                 onClick = {
                     onChangeWeekOffset(-1)
                     selectedDayIndex = 0
+                    coroutineScope.launch {
+                        pagerState.animateScrollToPage(0)
+                    }
                 },
                 modifier = Modifier.size(32.dp)
             ) {
@@ -263,7 +283,12 @@ fun HomeworkScreen(
                     color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHighest,
                     modifier = Modifier
                         .height(48.dp)
-                        .clickable { selectedDayIndex = index }
+                        .clickable {
+                            selectedDayIndex = index
+                            coroutineScope.launch {
+                                pagerState.animateScrollToPage(index)
+                            }
+                        }
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
@@ -369,14 +394,21 @@ fun HomeworkScreen(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Homework list for the strictly selected day
-        AnimatedContent(
-            targetState = finalFilteredList,
-            transitionSpec = { fadeIn() togetherWith fadeOut() },
-            modifier = Modifier.fillMaxSize(),
-            label = "homework_day_list_anim"
-        ) { itemsList ->
-            if (itemsList.isEmpty()) {
+        // Swipable Homework day pages
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.fillMaxSize()
+        ) { pageIndex ->
+            val pageDayHw = remember(homeworkList, pageIndex, monday, schedule) {
+                homeworkList.filter { HomeworkDateUtils.matchesDay(it, pageIndex, monday, schedule) }
+            }
+            val pageFiltered = when (statusFilter) {
+                HomeworkStatusFilter.ALL -> pageDayHw
+                HomeworkStatusFilter.PENDING -> pageDayHw.filter { !it.isCompleted }
+                HomeworkStatusFilter.COMPLETED -> pageDayHw.filter { it.isCompleted }
+            }
+
+            if (pageFiltered.isEmpty()) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -399,14 +431,14 @@ fun HomeworkScreen(
                             )
                         }
                         Text(
-                            text = if (totalCount == 0) "На этот день заданий нет" else "Все задания выполнены!",
+                            text = if (pageDayHw.isEmpty()) "На этот день заданий нет" else "Все задания выполнены!",
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            text = if (totalCount == 0) "Отличная работа! Можно отдохнуть" else "Вы справились со всеми заданиями на этот день",
+                            text = if (pageDayHw.isEmpty()) "Отличная работа! Можно отдохнуть" else "Вы справились со всеми заданиями на этот день",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center
@@ -420,7 +452,7 @@ fun HomeworkScreen(
                         .padding(horizontal = 16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    items(itemsList, key = { it.id }) { hw ->
+                    items(pageFiltered, key = { it.id }) { hw ->
                         HomeworkExpressiveCard(
                             homework = hw,
                             onToggleCompleted = onToggleCompleted

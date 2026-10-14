@@ -106,3 +106,21 @@ data class AcademicPeriod(
     val rangeDays: String,       // "20260901-20261026"
     val isActive: Boolean = false
 )
+
+fun List<Lesson>.sortedByTime(): List<Lesson> {
+    if (size <= 1) return this
+    return sortedWith(
+        compareBy<Lesson> { lesson ->
+            val time = lesson.startTime.trim()
+            if (time.contains(":")) {
+                val parts = time.split(":")
+                val h = parts.getOrNull(0)?.toIntOrNull() ?: 99
+                val m = parts.getOrNull(1)?.take(2)?.toIntOrNull() ?: 99
+                h * 60 + m
+            } else {
+                9999 + lesson.num
+            }
+        }.thenBy { it.num }
+    )
+}
+

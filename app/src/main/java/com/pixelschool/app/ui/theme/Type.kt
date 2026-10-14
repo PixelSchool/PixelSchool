@@ -9,15 +9,22 @@ import androidx.compose.ui.unit.sp
 import com.pixelschool.app.R
 
 val GoogleSans = FontFamily(
+    Font(R.font.google_sans_regular, FontWeight.Light),
     Font(R.font.google_sans_regular, FontWeight.Normal),
     Font(R.font.google_sans_medium, FontWeight.Medium),
-    Font(R.font.google_sans_bold, FontWeight.Bold)
+    Font(R.font.google_sans_bold, FontWeight.SemiBold),
+    Font(R.font.google_sans_bold, FontWeight.Bold),
+    Font(R.font.google_sans_bold, FontWeight.ExtraBold),
+    Font(R.font.google_sans_bold, FontWeight.Black)
 )
 
 val AppTypography = Typography(
     displayLarge = TextStyle(fontFamily = GoogleSans, fontWeight = FontWeight.Normal, fontSize = 57.sp, lineHeight = 64.sp),
+    displayMedium = TextStyle(fontFamily = GoogleSans, fontWeight = FontWeight.Normal, fontSize = 45.sp, lineHeight = 52.sp),
+    displaySmall = TextStyle(fontFamily = GoogleSans, fontWeight = FontWeight.Normal, fontSize = 36.sp, lineHeight = 44.sp),
     headlineLarge = TextStyle(fontFamily = GoogleSans, fontWeight = FontWeight.Normal, fontSize = 32.sp, lineHeight = 40.sp),
     headlineMedium = TextStyle(fontFamily = GoogleSans, fontWeight = FontWeight.Normal, fontSize = 28.sp, lineHeight = 36.sp),
+    headlineSmall = TextStyle(fontFamily = GoogleSans, fontWeight = FontWeight.Normal, fontSize = 24.sp, lineHeight = 32.sp),
     titleLarge = TextStyle(fontFamily = GoogleSans, fontWeight = FontWeight.Bold, fontSize = 22.sp, lineHeight = 28.sp),
     titleMedium = TextStyle(fontFamily = GoogleSans, fontWeight = FontWeight.Medium, fontSize = 16.sp, lineHeight = 24.sp),
     titleSmall = TextStyle(fontFamily = GoogleSans, fontWeight = FontWeight.Medium, fontSize = 14.sp, lineHeight = 20.sp),

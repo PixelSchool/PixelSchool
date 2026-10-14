@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material.icons.rounded.TrendingUp
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -42,13 +43,19 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import kotlinx.coroutines.launch
+import kotlin.math.ceil
 import com.pixelschool.app.data.model.AcademicPeriod
 import com.pixelschool.app.data.model.Mark
 import com.pixelschool.app.data.model.PeriodMarks
@@ -65,7 +72,9 @@ fun MarksScreen(
     onSelectPeriod: (Int) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val coroutineScope = rememberCoroutineScope()
     var selectedSubject by remember { mutableStateOf<SubjectSummary?>(null) }
+    var showGpaAnalysis by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     val periodTitles = remember(periods) {
@@ -78,19 +87,34 @@ fun MarksScreen(
     val allTabs = remember(periodTitles) { periodTitles + "За год" }
 
     var selectedTabIndex by remember {
-        mutableIntStateOf(selectedPeriodIndex.coerceIn(0, periodTitles.lastIndex))
-    }
-
-    LaunchedEffect(selectedPeriodIndex) {
-        if (selectedTabIndex < periodTitles.size && selectedPeriodIndex in periodTitles.indices) {
-            selectedTabIndex = selectedPeriodIndex
-        }
+        mutableIntStateOf(selectedPeriodIndex.coerceIn(0, allTabs.lastIndex))
     }
 
     val isYearTab = selectedTabIndex == allTabs.lastIndex
 
-    val displayedSubjects = remember(subjects, selectedTabIndex, isYearTab) {
-        if (isYearTab) {
+    val pagerState = rememberPagerState(
+        initialPage = selectedTabIndex.coerceIn(0, allTabs.lastIndex)
+    ) { allTabs.size }
+
+    LaunchedEffect(selectedPeriodIndex) {
+        if (selectedPeriodIndex in periodTitles.indices && selectedTabIndex != selectedPeriodIndex) {
+            selectedTabIndex = selectedPeriodIndex
+            pagerState.animateScrollToPage(selectedPeriodIndex)
+        }
+    }
+
+    LaunchedEffect(pagerState.currentPage) {
+        if (selectedTabIndex != pagerState.currentPage) {
+            selectedTabIndex = pagerState.currentPage
+            if (pagerState.currentPage < periodTitles.size) {
+                onSelectPeriod(pagerState.currentPage)
+            }
+        }
+    }
+
+    fun getSubjectsForTab(tabIndex: Int): List<SubjectSummary> {
+        val isYear = tabIndex == allTabs.lastIndex
+        return if (isYear) {
             subjects.map { s ->
                 s.copy(
                     marks = s.marks.sortedOldestFirst(),
@@ -101,8 +125,8 @@ fun MarksScreen(
             }
         } else {
             subjects.map { s ->
-                if (s.periodMarks.isNotEmpty() && selectedTabIndex < s.periodMarks.size) {
-                    val pm = s.periodMarks[selectedTabIndex]
+                if (s.periodMarks.isNotEmpty() && tabIndex < s.periodMarks.size) {
+                    val pm = s.periodMarks[tabIndex]
                     s.copy(
                         average = pm.average,
                         marks = pm.marks.sortedOldestFirst(),
@@ -121,15 +145,13 @@ fun MarksScreen(
         }
     }
 
-    val overallAverage = remember(displayedSubjects) {
-        if (displayedSubjects.isNotEmpty()) {
-            val allAverages = displayedSubjects.map { it.average }.filter { it > 0 }
-            if (allAverages.isNotEmpty()) allAverages.average().toFloat() else 0f
-        } else 0f
+    val currentDisplayedSubjects = remember(subjects, selectedTabIndex) {
+        getSubjectsForTab(selectedTabIndex)
     }
 
-    val totalMarksCount = remember(displayedSubjects) {
-        displayedSubjects.sumOf { it.marks.size }
+    val currentOverallAverage = remember(currentDisplayedSubjects) {
+        val avgs = currentDisplayedSubjects.map { it.average }.filter { it > 0 }
+        if (avgs.isNotEmpty()) avgs.average().toFloat() else 0f
     }
 
     Column(
@@ -143,6 +165,9 @@ fun MarksScreen(
             tabs = allTabs,
             onTabSelected = { index ->
                 selectedTabIndex = index
+                coroutineScope.launch {
+                    pagerState.animateScrollToPage(index)
+                }
                 if (index < periodTitles.size) {
                     onSelectPeriod(index)
                 }
@@ -151,152 +176,185 @@ fun MarksScreen(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 16.dp)
-        ) {
-            // Hero Overall GPA Card
-            Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(24.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.primaryContainer
-            )
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(20.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column {
-                    Text(
-                        text = if (isYearTab) "Годовой средний балл" else "Средний балл",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = if (overallAverage > 0f) String.format(Locale.US, "%.2f", overallAverage) else "—",
-                        style = MaterialTheme.typography.displayMedium,
-                        fontWeight = FontWeight.Black,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "Всего оценок: $totalMarksCount",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
-                    )
-                }
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.fillMaxSize()
+        ) { pageIndex ->
+            val pageSubjects = remember(subjects, pageIndex) { getSubjectsForTab(pageIndex) }
+            val pageIsYear = pageIndex == allTabs.lastIndex
+            val pageAverage = remember(pageSubjects) {
+                val avgs = pageSubjects.map { it.average }.filter { it > 0 }
+                if (avgs.isNotEmpty()) avgs.average().toFloat() else 0f
+            }
+            val pageMarksCount = remember(pageSubjects) { pageSubjects.sumOf { it.marks.size } }
 
-                Surface(
-                    shape = RoundedCornerShape(18.dp),
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(4.dp)
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 16.dp)
+            ) {
+                // Hero Overall GPA Card (Clickable -> Shows "Что надо подтянуть")
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(24.dp))
+                        .clickable { showGpaAnalysis = true },
+                    shape = RoundedCornerShape(24.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer
+                    )
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(20.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Star,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onPrimary,
-                            modifier = Modifier.height(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = if (overallAverage >= 4.5f) "Отлично" else if (overallAverage >= 3.6f) "Хорошо" else if (overallAverage > 0f) "Внимание" else "Нет данных",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.onPrimary,
-                            fontWeight = FontWeight.Bold
-                        )
+                        Column {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = if (pageIsYear) "Годовой средний балл" else "Средний балл",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "• нажми для анализа",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = if (pageAverage > 0f) String.format(Locale.US, "%.2f", pageAverage) else "—",
+                                style = MaterialTheme.typography.displayMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Всего оценок: $pageMarksCount",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                            )
+                        }
+
+                        Surface(
+                            shape = RoundedCornerShape(18.dp),
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(4.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Star,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onPrimary,
+                                    modifier = Modifier.height(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = if (pageAverage >= 4.5f) "Отлично" else if (pageAverage >= 3.6f) "Хорошо" else if (pageAverage > 0f) "Внимание" else "Нет данных",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.onPrimary,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
                     }
                 }
-            }
-        }
 
-        Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(12.dp))
 
-        Text(
-            text = if (isYearTab) "Ведомость за год" else "Предметы",
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold
-        )
+                Text(
+                    text = if (pageIsYear) "Ведомость за год" else "Предметы",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
 
-        Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(12.dp))
 
-        if (displayedSubjects.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.padding(24.dp)
-                ) {
-                    Surface(
-                        shape = RoundedCornerShape(24.dp),
-                        color = MaterialTheme.colorScheme.secondaryContainer,
-                        modifier = Modifier.padding(12.dp)
+                if (pageSubjects.isEmpty() || pageSubjects.all { it.marks.isEmpty() && it.average == 0f && it.finalMark == null }) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Star,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSecondaryContainer,
-                            modifier = Modifier
-                                .padding(20.dp)
-                                .height(40.dp)
-                                .width(40.dp)
-                        )
-                    }
-                    Text(
-                        text = "В этом периоде пока нет оценок",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(
-                        text = "Оценки появятся, как только учителя выставят их в журнал",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center
-                    )
-                }
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                if (isYearTab) {
-                    items(displayedSubjects, key = { it.subject }) { item ->
-                        YearlySubjectCard(
-                            summary = item,
-                            onClick = { selectedSubject = item }
-                        )
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.padding(24.dp)
+                        ) {
+                            Surface(
+                                shape = RoundedCornerShape(24.dp),
+                                color = MaterialTheme.colorScheme.secondaryContainer,
+                                modifier = Modifier.padding(12.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Star,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    modifier = Modifier
+                                        .padding(20.dp)
+                                        .height(40.dp)
+                                        .width(40.dp)
+                                )
+                            }
+                            Text(
+                                text = "В этом периоде пока нет оценок",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = "Оценки появятся, как только учителя выставят их в журнал",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center
+                            )
+                        }
                     }
                 } else {
-                    items(displayedSubjects, key = { it.subject }) { item ->
-                        SubjectMarkCard(
-                            summary = item,
-                            onClick = { selectedSubject = item }
-                        )
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        if (pageIsYear) {
+                            items(pageSubjects, key = { it.subject }) { item ->
+                                YearlySubjectCard(
+                                    summary = item,
+                                    onClick = { selectedSubject = item }
+                                )
+                            }
+                        } else {
+                            items(pageSubjects, key = { it.subject }) { item ->
+                                SubjectMarkCard(
+                                    summary = item,
+                                    onClick = { selectedSubject = item }
+                                )
+                            }
+                        }
+                        item {
+                            Spacer(modifier = Modifier.height(80.dp))
+                        }
                     }
-                }
-                item {
-                    Spacer(modifier = Modifier.height(80.dp))
                 }
             }
         }
     }
-}
+
+    if (showGpaAnalysis) {
+        GpaAnalysisBottomSheet(
+            subjects = currentDisplayedSubjects,
+            overallAverage = currentOverallAverage,
+            isYearTab = selectedTabIndex == allTabs.lastIndex,
+            onDismiss = { showGpaAnalysis = false }
+        )
+    }
 
     selectedSubject?.let { subject ->
         ModalBottomSheet(
@@ -735,4 +793,278 @@ private fun List<Mark>.sortedOldestFirst(): List<Mark> {
 private fun List<Mark>.sortedNewestFirst(): List<Mark> {
     if (size <= 1) return this
     return this.reversed().sortedByDescending { parseAcademicDateWeight(it.date) }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun GpaAnalysisBottomSheet(
+    subjects: List<SubjectSummary>,
+    overallAverage: Float,
+    isYearTab: Boolean,
+    onDismiss: () -> Unit
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 24.dp)
+                .padding(top = 8.dp, bottom = 48.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Что надо подтянуть",
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = if (isYearTab) "Анализ годовых оценок" else "Анализ оценок за период",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer
+                ) {
+                    Text(
+                        text = if (overallAverage > 0f) String.format(Locale.US, "%.2f", overallAverage) else "—",
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            val validSubjects = subjects.filter { it.average > 0f }
+            val needAttention = validSubjects.filter { it.average < 3.60f }
+            val closeToFive = validSubjects.filter { it.average in 3.60f..4.59f }
+            val solidFives = validSubjects.filter { it.average >= 4.60f }
+
+            if (needAttention.isEmpty() && closeToFive.isEmpty()) {
+                Surface(
+                    shape = RoundedCornerShape(20.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(20.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "🎉 Отличный результат!",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "Все ваши предметы идут на «отлично»! Продолжайте в том же духе.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
+            }
+
+            if (needAttention.isNotEmpty()) {
+                Text(
+                    text = "⚠️ Требуют внимания (< 3.60)",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.error
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+
+                needAttention.forEach { sub ->
+                    val neededForFour = calculateNeededMarks(sub.marks, 3.60)
+                    val neededForFive = calculateNeededMarks(sub.marks, 4.60)
+
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        shape = RoundedCornerShape(18.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f)
+                        )
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = sub.subject,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                ExpressiveGradeBadge(
+                                    value = String.format(Locale.US, "%.2f", sub.average)
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "• До 4 (хорошо): нужно получить $neededForFour ${pluralMarks(neededForFour)} «5»",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "• До 5 (отлично): нужно получить $neededForFive ${pluralMarks(neededForFive)} «5»",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+
+            if (closeToFive.isNotEmpty()) {
+                Text(
+                    text = "🎯 Близко к пятёрке (3.60 — 4.59)",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+
+                closeToFive.forEach { sub ->
+                    val neededForFive = calculateNeededMarks(sub.marks, 4.60)
+
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        shape = RoundedCornerShape(18.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+                        )
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = sub.subject,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "Осталось: $neededForFive ${pluralMarks(neededForFive)} «5» до оценки 5",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            ExpressiveGradeBadge(
+                                value = String.format(Locale.US, "%.2f", sub.average)
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+
+            if (solidFives.isNotEmpty()) {
+                Text(
+                    text = "⭐ Отличные предметы (${solidFives.size})",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    solidFives.forEach { sub ->
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    text = sub.subject,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    text = String.format(Locale.US, "%.2f", sub.average),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun calculateNeededMarks(marks: List<Mark>, targetAverage: Double): Int {
+    if (marks.isEmpty()) return 1
+    var currentWeightedSum = 0.0
+    var totalWeight = 0.0
+    for (m in marks) {
+        val v = m.value.firstOrNull()?.toString()?.toDoubleOrNull() ?: continue
+        val w = if (m.weight > 0) m.weight.toDouble() else 1.0
+        currentWeightedSum += v * w
+        totalWeight += w
+    }
+    if (totalWeight == 0.0) return 1
+    val currentAvg = currentWeightedSum / totalWeight
+    if (currentAvg >= targetAverage) return 0
+    val diff = 5.0 - targetAverage
+    if (diff <= 0.0) return 0
+    val neededK = (targetAverage * totalWeight - currentWeightedSum) / diff
+    return ceil(neededK).toInt().coerceAtLeast(1)
+}
+
+private fun pluralMarks(n: Int): String {
+    val remainder100 = n % 100
+    val remainder10 = n % 10
+    if (remainder100 in 11..19) return "оценок"
+    return when (remainder10) {
+        1 -> "оценку"
+        2, 3, 4 -> "оценки"
+        else -> "оценок"
+    }
 }

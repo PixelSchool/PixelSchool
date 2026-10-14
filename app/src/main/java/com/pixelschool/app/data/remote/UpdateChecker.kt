@@ -16,7 +16,7 @@ data class AppUpdateInfo(
 )
 
 class UpdateChecker(
-    private val client: OkHttpClient = OkHttpClient()
+    private val client: OkHttpClient = RussianTrustManager.defaultOkHttpClient
 ) {
 
     suspend fun checkLatestRelease(currentVersion: String = "1.0.0"): Result<AppUpdateInfo> =
