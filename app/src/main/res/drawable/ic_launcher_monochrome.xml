@@ -7,12 +7,12 @@
     <group
         android:scaleX="2.7"
         android:scaleY="2.7"
-        android:translateX="21.60"
-        android:translateY="22.03">
+        android:translateX="22.13"
+        android:translateY="21.6">
         <!-- Tassel behind the cap -->
         <path
             android:fillColor="#FFFFFF"
-            android:pathData="M20.98,9.5 L22.08,9.0 V16.2 C22.08,16.55 21.85,16.8 21.53,16.8 C21.21,16.8 20.98,16.55 20.98,16.2 Z" />
+            android:pathData="M20.0,8.5 H21.0 V16.2 C21.0,16.6 20.8,17.0 20.5,17.0 C20.2,17.0 20.0,16.6 20.0,16.2 Z" />
         <!-- Skullcap -->
         <path
             android:fillColor="#FFFFFF"
@@ -20,6 +20,6 @@
         <!-- Mortarboard Diamond -->
         <path
             android:fillColor="#FFFFFF"
-            android:pathData="M11.04,3.52 C11.64,3.20 12.36,3.20 12.96,3.52 L21.39,8.12 C21.85,8.37 22.08,8.68 22.08,9.0 L12.96,14.48 C12.36,14.80 11.64,14.80 11.04,14.48 L2.61,9.88 C1.92,9.50 1.92,8.50 2.61,8.12 Z" />
+            android:pathData="M11.04,3.52L2.61,8.12c-0.69,0.38 -0.69,1.38 0,1.76l8.43,4.6c0.6,0.33 1.32,0.33 1.92,0l8.44,-4.6c0.69,-0.38 0.69,-1.38 0,-1.76l-8.44,-4.6c-0.6,-0.32 -1.32,-0.32 -1.92,0z" />
     </group>
 </vector>

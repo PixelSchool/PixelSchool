@@ -1,8 +1,6 @@
-<div align="center">
-
-<img src="art/logo_squircle.png" width="128" height="128" alt="PixelSchool Logo" />
-
 # PixelSchool 🎓
+
+<div align="center">
 
 ![Android CI](https://github.com/Refyrd/PixelSchool/actions/workflows/build.yml/badge.svg)
 ![Kotlin](https://img.shields.io/badge/Kotlin-2.0.21-purple.svg?logo=kotlin)
