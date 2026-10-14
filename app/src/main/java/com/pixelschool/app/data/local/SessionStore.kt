@@ -2,12 +2,43 @@ package com.pixelschool.app.data.local
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.util.Log
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKeys
 import com.pixelschool.app.data.model.UserSession
 
 class SessionStore(context: Context) {
 
-    private val prefs: SharedPreferences =
+    private val prefs: SharedPreferences = try {
+        val masterKeyAlias = MasterKeys.getOrCreate(MasterKeys.AES256_GCM_SPEC)
+        val encPrefs = EncryptedSharedPreferences.create(
+            "pixel_school_session_enc",
+            masterKeyAlias,
+            context,
+            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+        )
+        val oldPrefs = context.getSharedPreferences("pixel_school_session", Context.MODE_PRIVATE)
+        if (oldPrefs.all.isNotEmpty() && encPrefs.all.isEmpty()) {
+            val editor = encPrefs.edit()
+            oldPrefs.all.forEach { (key, value) ->
+                when (value) {
+                    is String -> editor.putString(key, value)
+                    is Boolean -> editor.putBoolean(key, value)
+                    is Int -> editor.putInt(key, value)
+                    is Long -> editor.putLong(key, value)
+                    is Float -> editor.putFloat(key, value)
+                    is Set<*> -> @Suppress("UNCHECKED_CAST") editor.putStringSet(key, value as Set<String>)
+                }
+            }
+            editor.apply()
+            oldPrefs.edit().clear().apply()
+        }
+        encPrefs
+    } catch (e: Exception) {
+        Log.w("SessionStore", "Failed to initialize EncryptedSharedPreferences, fallback to standard", e)
         context.getSharedPreferences("pixel_school_session", Context.MODE_PRIVATE)
+    }
 
     companion object {
         private const val KEY_TOKEN = "key_auth_token"

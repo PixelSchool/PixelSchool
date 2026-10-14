@@ -36,4 +36,12 @@ class SettingsStore(context: Context) {
         prefs.edit().putString("key_theme_palette", palette.name).apply()
         _themePalette.value = palette
     }
+
+    private val _notificationsEnabled = MutableStateFlow(prefs.getBoolean("key_notifications_enabled", true))
+    val notificationsEnabled: StateFlow<Boolean> = _notificationsEnabled.asStateFlow()
+
+    fun setNotificationsEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean("key_notifications_enabled", enabled).apply()
+        _notificationsEnabled.value = enabled
+    }
 }

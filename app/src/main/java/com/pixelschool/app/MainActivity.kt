@@ -47,6 +47,9 @@ class MainActivity : ComponentActivity() {
         }
 
         val settingsStore = com.pixelschool.app.data.local.SettingsStore(applicationContext)
+        if (settingsStore.notificationsEnabled.value) {
+            com.pixelschool.app.notification.MarksSyncWorker.schedule(applicationContext)
+        }
 
         setContent {
             val palette by settingsStore.themePalette.collectAsState()

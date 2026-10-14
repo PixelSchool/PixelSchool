@@ -56,10 +56,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.rounded.Palette
+import androidx.compose.material.icons.rounded.Notifications
+import androidx.compose.material3.Switch
 import com.pixelschool.app.data.local.AppThemePalette
 import com.pixelschool.app.data.local.SettingsStore
 import com.pixelschool.app.data.model.ProfileUiState
 import com.pixelschool.app.data.model.UserSession
+import com.pixelschool.app.notification.MarksSyncWorker
 import com.pixelschool.app.ui.navigation.Screen
 import com.pixelschool.app.ui.screens.AuthScreen
 import com.pixelschool.app.ui.screens.HomeworkScreen
@@ -340,6 +343,13 @@ fun ProfileScreen(
 
         // Update Card
         val context = LocalContext.current
+        val appVersion = remember(context) {
+            try {
+                context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "1.3.0"
+            } catch (_: Exception) {
+                "1.3.0"
+            }
+        }
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(22.dp),
@@ -361,7 +371,7 @@ fun ProfileScreen(
                             text = if (updateInfo?.isUpdateAvailable == true)
                                 "Доступно обновление v${updateInfo.latestVersion}"
                             else
-                                "Версия приложения: 1.0.0",
+                                "Версия приложения: $appVersion",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
@@ -401,6 +411,67 @@ fun ProfileScreen(
         }
 
         Spacer(modifier = Modifier.height(14.dp))
+
+        if (settingsStore != null) {
+            val notificationsEnabled by settingsStore.notificationsEnabled.collectAsState()
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(22.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f)
+                )
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(18.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(42.dp)
+                            .background(
+                                color = MaterialTheme.colorScheme.primaryContainer,
+                                shape = RoundedCornerShape(12.dp)
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Notifications,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(14.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Уведомления об оценках",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "Периодическая проверка и уведомления о новых оценках",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = notificationsEnabled,
+                        onCheckedChange = { isChecked ->
+                            settingsStore.setNotificationsEnabled(isChecked)
+                            if (isChecked) {
+                                MarksSyncWorker.schedule(context)
+                            } else {
+                                MarksSyncWorker.cancel(context)
+                            }
+                        }
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+        }
 
         if (settingsStore != null) {
             val currentPalette by settingsStore.themePalette.collectAsState()
