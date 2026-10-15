@@ -309,7 +309,9 @@ class DiaryRepository(
                 return list
             }
             if (webMarks.exceptionOrNull() is com.pixelschool.app.data.remote.SessionExpiredException) {
-                throw webMarks.exceptionOrNull()!!
+                if (activeSession.token.isBlank() || activeSession.token == "web_session") {
+                    throw webMarks.exceptionOrNull()!!
+                }
             }
             lastError = webMarks.exceptionOrNull()
         }

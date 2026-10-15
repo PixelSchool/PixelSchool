@@ -1,6 +1,8 @@
 package com.pixelschool.app.ui
 
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.verticalScroll
@@ -209,7 +211,9 @@ fun MainAppScreen(
                 ) {
                     Crossfade(
                         targetState = currentScreen,
-                        modifier = Modifier.fillMaxSize()
+                        animationSpec = tween(durationMillis = 140, easing = FastOutSlowInEasing),
+                        modifier = Modifier.fillMaxSize(),
+                        label = "TabCrossfade"
                     ) { screen ->
                     when (screen) {
                     Screen.Schedule -> {
@@ -393,9 +397,17 @@ fun ProfileScreen(
                                 val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
                                 context.startActivity(intent)
                             },
-                            shape = RoundedCornerShape(14.dp)
+                            modifier = Modifier
+                                .padding(start = 12.dp)
+                                .height(40.dp),
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                            shape = RoundedCornerShape(12.dp)
                         ) {
-                            Text("Скачать")
+                            Text(
+                                text = "Обновить",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold
+                            )
                         }
                     } else {
                         IconButton(onClick = onCheckUpdates) {
@@ -577,14 +589,14 @@ fun ProfileScreen(
             }
         }
 
-        Spacer(modifier = Modifier.weight(1f))
+        Spacer(modifier = Modifier.height(20.dp))
 
         OutlinedButton(
             onClick = onLogout,
             modifier = Modifier
                 .fillMaxWidth()
-                .height(52.dp),
-            shape = RoundedCornerShape(18.dp),
+                .height(48.dp),
+            shape = RoundedCornerShape(16.dp),
             colors = ButtonDefaults.outlinedButtonColors(
                 contentColor = MaterialTheme.colorScheme.error
             )
@@ -597,8 +609,8 @@ fun ProfileScreen(
             Spacer(modifier = Modifier.size(8.dp))
             Text(
                 text = "Выйти из аккаунта",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold
             )
         }
 

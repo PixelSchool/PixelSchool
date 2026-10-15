@@ -9,35 +9,44 @@ import com.pixelschool.app.data.model.UserSession
 
 class SessionStore(context: Context) {
 
-    private val prefs: SharedPreferences = try {
+    private val backupPrefs: SharedPreferences =
+        context.getSharedPreferences("pixel_school_session", Context.MODE_PRIVATE)
+
+    private val encPrefs: SharedPreferences? = try {
         val masterKeyAlias = MasterKeys.getOrCreate(MasterKeys.AES256_GCM_SPEC)
-        val encPrefs = EncryptedSharedPreferences.create(
+        EncryptedSharedPreferences.create(
             "pixel_school_session_enc",
             masterKeyAlias,
             context,
             EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
             EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
         )
-        val oldPrefs = context.getSharedPreferences("pixel_school_session", Context.MODE_PRIVATE)
-        if (oldPrefs.all.isNotEmpty() && encPrefs.all.isEmpty()) {
-            val editor = encPrefs.edit()
-            oldPrefs.all.forEach { (key, value) ->
-                when (value) {
-                    is String -> editor.putString(key, value)
-                    is Boolean -> editor.putBoolean(key, value)
-                    is Int -> editor.putInt(key, value)
-                    is Long -> editor.putLong(key, value)
-                    is Float -> editor.putFloat(key, value)
-                    is Set<*> -> @Suppress("UNCHECKED_CAST") editor.putStringSet(key, value as Set<String>)
-                }
-            }
-            editor.apply()
-            oldPrefs.edit().clear().apply()
-        }
-        encPrefs
     } catch (e: Exception) {
-        Log.w("SessionStore", "Failed to initialize EncryptedSharedPreferences, fallback to standard", e)
-        context.getSharedPreferences("pixel_school_session", Context.MODE_PRIVATE)
+        Log.w("SessionStore", "EncryptedSharedPreferences init failed, using backup prefs", e)
+        null
+    }
+
+    private fun getSafeString(key: String, defValue: String? = null): String? {
+        if (encPrefs != null) {
+            try {
+                val value = encPrefs.getString(key, null)
+                if (value != null) return value
+            } catch (e: Exception) {
+                Log.w("SessionStore", "Failed to read encrypted key $key, using backup", e)
+            }
+        }
+        return backupPrefs.getString(key, defValue)
+    }
+
+    private fun getSafeBoolean(key: String, defValue: Boolean = false): Boolean {
+        if (encPrefs != null) {
+            try {
+                return encPrefs.getBoolean(key, defValue)
+            } catch (e: Exception) {
+                Log.w("SessionStore", "Failed to read encrypted boolean $key, using backup", e)
+            }
+        }
+        return backupPrefs.getBoolean(key, defValue)
     }
 
     companion object {
@@ -66,11 +75,11 @@ class SessionStore(context: Context) {
     }
 
     fun saveSession(session: UserSession, cookies: String? = null) {
-        val existingFirst = prefs.getString(KEY_FIRST_NAME, "") ?: ""
-        val existingLast = prefs.getString(KEY_LAST_NAME, "") ?: ""
-        val existingSchool = prefs.getString(KEY_SCHOOL_NAME, "") ?: ""
-        val existingUserTitle = prefs.getString(KEY_USER_TITLE, "") ?: ""
-        val existingSchoolTitle = prefs.getString(KEY_SCHOOL_TITLE, "") ?: ""
+        val existingFirst = getSafeString(KEY_FIRST_NAME, "") ?: ""
+        val existingLast = getSafeString(KEY_LAST_NAME, "") ?: ""
+        val existingSchool = getSafeString(KEY_SCHOOL_NAME, "") ?: ""
+        val existingUserTitle = getSafeString(KEY_USER_TITLE, "") ?: ""
+        val existingSchoolTitle = getSafeString(KEY_SCHOOL_TITLE, "") ?: ""
 
         val parts = session.userTitle.trim().split(Regex("""\s+"""))
         val derivedLast = if (session.lastName.isNotBlank()) {
@@ -119,33 +128,42 @@ class SessionStore(context: Context) {
             session.schoolTitle.ifBlank { "Республика Крым" }
         }
 
-        prefs.edit().apply {
-            putString(KEY_TOKEN, session.token)
-            putString(KEY_VENDOR, session.vendor)
-            putString(KEY_LOGIN, session.login)
-            putString(KEY_USER_TITLE, effectiveUserTitle)
-            putString(KEY_SCHOOL_TITLE, effectiveSchoolTitle)
-            putBoolean(KEY_IS_DEMO, session.isDemo)
-            putString(KEY_STUDENT_ID, session.studentId)
-            putString(KEY_FIRST_NAME, derivedFirst)
-            putString(KEY_LAST_NAME, derivedLast)
-            putString(KEY_SCHOOL_NAME, derivedSchool)
+        val saveToEditor: (SharedPreferences.Editor) -> Unit = { editor ->
+            editor.putString(KEY_TOKEN, session.token)
+            editor.putString(KEY_VENDOR, session.vendor)
+            editor.putString(KEY_LOGIN, session.login)
+            editor.putString(KEY_USER_TITLE, effectiveUserTitle)
+            editor.putString(KEY_SCHOOL_TITLE, effectiveSchoolTitle)
+            editor.putBoolean(KEY_IS_DEMO, session.isDemo)
+            editor.putString(KEY_STUDENT_ID, session.studentId)
+            editor.putString(KEY_FIRST_NAME, derivedFirst)
+            editor.putString(KEY_LAST_NAME, derivedLast)
+            editor.putString(KEY_SCHOOL_NAME, derivedSchool)
             if (cookies != null) {
-                putString(KEY_COOKIES, cookies)
+                editor.putString(KEY_COOKIES, cookies)
             }
-            apply()
+            editor.apply()
+        }
+
+        saveToEditor(backupPrefs.edit())
+        encPrefs?.let {
+            try {
+                saveToEditor(it.edit())
+            } catch (e: Exception) {
+                Log.w("SessionStore", "Failed to write session to encrypted prefs", e)
+            }
         }
     }
 
     fun getSession(): UserSession? {
-        val token = prefs.getString(KEY_TOKEN, null) ?: return null
-        val isDemo = prefs.getBoolean(KEY_IS_DEMO, false)
-        val vendor = prefs.getString(KEY_VENDOR, "edu") ?: "edu"
-        val rawUser = prefs.getString(KEY_USER_TITLE, "") ?: ""
-        val rawSchool = prefs.getString(KEY_SCHOOL_TITLE, "") ?: ""
-        val firstName = prefs.getString(KEY_FIRST_NAME, "") ?: ""
-        val lastName = prefs.getString(KEY_LAST_NAME, "") ?: ""
-        val schoolName = prefs.getString(KEY_SCHOOL_NAME, "") ?: ""
+        val token = getSafeString(KEY_TOKEN) ?: return null
+        val isDemo = getSafeBoolean(KEY_IS_DEMO, false)
+        val vendor = getSafeString(KEY_VENDOR, "edu") ?: "edu"
+        val rawUser = getSafeString(KEY_USER_TITLE, "") ?: ""
+        val rawSchool = getSafeString(KEY_SCHOOL_TITLE, "") ?: ""
+        val firstName = getSafeString(KEY_FIRST_NAME, "") ?: ""
+        val lastName = getSafeString(KEY_LAST_NAME, "") ?: ""
+        val schoolName = getSafeString(KEY_SCHOOL_NAME, "") ?: ""
 
         val effectiveUser = if (rawUser.isNotBlank() && rawUser != "Ученик") {
             rawUser
@@ -170,20 +188,27 @@ class SessionStore(context: Context) {
         return UserSession(
             token = token,
             vendor = vendor,
-            login = prefs.getString(KEY_LOGIN, "") ?: "",
+            login = getSafeString(KEY_LOGIN, "") ?: "",
             userTitle = effectiveUser,
             schoolTitle = effectiveSchool,
             isDemo = isDemo,
-            studentId = prefs.getString(KEY_STUDENT_ID, "") ?: "",
+            studentId = getSafeString(KEY_STUDENT_ID, "") ?: "",
             firstName = firstName,
             lastName = lastName,
             schoolName = if (schoolName.isNotBlank()) schoolName else effectiveSchool
         )
     }
 
-    fun getCookies(): String? = prefs.getString(KEY_COOKIES, null)
+    fun getCookies(): String? = getSafeString(KEY_COOKIES)
 
     fun clear() {
-        prefs.edit().clear().apply()
+        backupPrefs.edit().clear().apply()
+        encPrefs?.let {
+            try {
+                it.edit().clear().apply()
+            } catch (e: Exception) {
+                Log.w("SessionStore", "Failed to clear encrypted prefs", e)
+            }
+        }
     }
 }

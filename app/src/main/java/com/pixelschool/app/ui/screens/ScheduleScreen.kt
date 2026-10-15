@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
@@ -60,6 +62,7 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -80,15 +83,17 @@ fun ScheduleScreen(
         initialPage = selectedDayIndex.coerceIn(0, (schedule.size - 1).coerceAtLeast(0))
     ) { schedule.size }
 
-    LaunchedEffect(selectedDayIndex, schedule.size) {
-        if (schedule.isNotEmpty() && selectedDayIndex in schedule.indices && pagerState.currentPage != selectedDayIndex) {
-            pagerState.animateScrollToPage(selectedDayIndex)
+    LaunchedEffect(selectedDayIndex) {
+        if (schedule.isNotEmpty() && selectedDayIndex in schedule.indices && !pagerState.isScrollInProgress && pagerState.currentPage != selectedDayIndex) {
+            pagerState.scrollToPage(selectedDayIndex)
         }
     }
 
-    LaunchedEffect(pagerState.currentPage) {
-        if (schedule.isNotEmpty() && pagerState.currentPage in schedule.indices && pagerState.currentPage != selectedDayIndex) {
-            onSelectDay(pagerState.currentPage)
+    LaunchedEffect(pagerState, schedule.size) {
+        snapshotFlow { pagerState.settledPage }.collect { settled ->
+            if (schedule.isNotEmpty() && settled in schedule.indices && settled != selectedDayIndex) {
+                onSelectDay(settled)
+            }
         }
     }
 
@@ -375,7 +380,7 @@ fun LessonDetailBottomSheet(
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false),
         containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
         shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
         dragHandle = {
@@ -392,6 +397,8 @@ fun LessonDetailBottomSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .fillMaxHeight(0.75f)
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp)
                 .padding(bottom = 36.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)

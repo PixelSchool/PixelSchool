@@ -19,11 +19,11 @@ class UpdateChecker(
     private val client: OkHttpClient = RussianTrustManager.defaultOkHttpClient
 ) {
 
-    suspend fun checkLatestRelease(currentVersion: String = "1.0.0"): Result<AppUpdateInfo> =
+    suspend fun checkLatestRelease(currentVersion: String = com.pixelschool.app.BuildConfig.VERSION_NAME): Result<AppUpdateInfo> =
         withContext(Dispatchers.IO) {
             try {
                 val request = Request.Builder()
-                    .url("https://api.github.com/repos/Refyrd/PixelSchool/releases/latest")
+                    .url("https://api.github.com/repos/PixelSchool/PixelSchool/releases/latest")
                     .header("Accept", "application/vnd.github.v3+json")
                     .header("User-Agent", "PixelSchool-Android-App")
                     .build()

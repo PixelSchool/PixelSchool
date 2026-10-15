@@ -12,11 +12,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.TrendingUp
@@ -75,7 +77,7 @@ fun MarksScreen(
     val coroutineScope = rememberCoroutineScope()
     var selectedSubject by remember { mutableStateOf<SubjectSummary?>(null) }
     var showGpaAnalysis by remember { mutableStateOf(false) }
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
 
     val periodTitles = remember(periods) {
         if (periods.isNotEmpty()) {
@@ -97,17 +99,19 @@ fun MarksScreen(
     ) { allTabs.size }
 
     LaunchedEffect(selectedPeriodIndex) {
-        if (selectedPeriodIndex in periodTitles.indices && selectedTabIndex != selectedPeriodIndex) {
+        if (selectedPeriodIndex in periodTitles.indices && selectedTabIndex != selectedPeriodIndex && !pagerState.isScrollInProgress) {
             selectedTabIndex = selectedPeriodIndex
-            pagerState.animateScrollToPage(selectedPeriodIndex)
+            pagerState.scrollToPage(selectedPeriodIndex)
         }
     }
 
-    LaunchedEffect(pagerState.currentPage) {
-        if (selectedTabIndex != pagerState.currentPage) {
-            selectedTabIndex = pagerState.currentPage
-            if (pagerState.currentPage < periodTitles.size) {
-                onSelectPeriod(pagerState.currentPage)
+    LaunchedEffect(pagerState) {
+        snapshotFlow { pagerState.settledPage }.collect { settled ->
+            if (selectedTabIndex != settled) {
+                selectedTabIndex = settled
+                if (settled < periodTitles.size) {
+                    onSelectPeriod(settled)
+                }
             }
         }
     }
@@ -365,6 +369,7 @@ fun MarksScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .fillMaxHeight(0.75f)
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = 24.dp)
                     .padding(top = 8.dp, bottom = 48.dp)
@@ -805,13 +810,14 @@ fun GpaAnalysisBottomSheet(
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false),
         shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
         containerColor = MaterialTheme.colorScheme.surfaceContainerLow
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .fillMaxHeight(0.75f)
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp)
                 .padding(top = 8.dp, bottom = 48.dp)

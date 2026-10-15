@@ -168,9 +168,12 @@ class MainViewModel(
             _homework.value = repository.getHomework(_currentWeekOffset.value)
         } catch (e: Exception) {
             if (e is SessionExpiredException) {
-                repository.logout()
                 _errorMessage.value = e.message ?: "Сессия устарела. Требуется повторный вход."
                 _errorState.value = e.toErrorUiState("Сессия устарела. Требуется повторный вход.")
+                if (_schedule.value.isEmpty()) {
+                    _schedule.value = repository.getCachedSchedule(_currentWeekOffset.value) ?: emptyList()
+                    _homework.value = repository.getCachedHomework() ?: emptyList()
+                }
                 if (showLoadingIndicator) _isLoading.value = false
                 return
             }
@@ -196,9 +199,11 @@ class MainViewModel(
             _marks.value = repository.getMarks(activeRange)
         } catch (e: Exception) {
             if (e is SessionExpiredException) {
-                repository.logout()
                 _errorMessage.value = e.message ?: "Сессия устарела. Требуется повторный вход."
                 _errorState.value = e.toErrorUiState("Сессия устарела. Требуется повторный вход.")
+                if (_marks.value.isEmpty()) {
+                    _marks.value = repository.getCachedGrades()?.first ?: emptyList()
+                }
                 if (showLoadingIndicator) _isLoading.value = false
                 return
             }
@@ -257,9 +262,12 @@ class MainViewModel(
                 _homework.value = repository.getHomework(newOffset)
             } catch (e: Exception) {
                 if (e is SessionExpiredException) {
-                    repository.logout()
                     _errorMessage.value = e.message ?: "Сессия устарела. Требуется повторный вход."
                     _errorState.value = e.toErrorUiState("Сессия устарела. Требуется повторный вход.")
+                    if (_schedule.value.isEmpty()) {
+                        _schedule.value = repository.getCachedSchedule(newOffset) ?: emptyList()
+                        _homework.value = repository.getCachedHomework() ?: emptyList()
+                    }
                     return@launch
                 }
                 if (!curSession.isDemo && _schedule.value.isEmpty()) {
@@ -287,9 +295,11 @@ class MainViewModel(
                     _marks.value = repository.getMarks(p.rangeDays)
                 } catch (e: Exception) {
                     if (e is SessionExpiredException) {
-                        repository.logout()
                         _errorMessage.value = e.message ?: "Сессия устарела. Требуется повторный вход."
                         _errorState.value = e.toErrorUiState("Сессия устарела. Требуется повторный вход.")
+                        if (_marks.value.isEmpty()) {
+                            _marks.value = repository.getCachedGrades()?.first ?: emptyList()
+                        }
                         return@launch
                     }
                     if (!curSession.isDemo && _marks.value.isEmpty()) {
@@ -373,7 +383,7 @@ class MainViewModel(
     fun checkForUpdates() {
         viewModelScope.launch {
             val checker = com.pixelschool.app.data.remote.UpdateChecker()
-            val result = checker.checkLatestRelease(currentVersion = "1.0.0")
+            val result = checker.checkLatestRelease(currentVersion = com.pixelschool.app.BuildConfig.VERSION_NAME)
             result.getOrNull()?.let {
                 _updateInfo.value = it
             }

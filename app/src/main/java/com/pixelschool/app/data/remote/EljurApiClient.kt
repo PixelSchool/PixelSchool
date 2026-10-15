@@ -1111,7 +1111,9 @@ class EljurApiClient(
                     return@withContext webDays
                 }
                 if (webDays.exceptionOrNull() is SessionExpiredException) {
-                    return@withContext webDays
+                    if (effectiveToken.isBlank()) {
+                        return@withContext webDays
+                    }
                 }
             }
 
@@ -1217,7 +1219,9 @@ class EljurApiClient(
                     return@withContext webMarks
                 }
                 if (webMarks.exceptionOrNull() is SessionExpiredException) {
-                    return@withContext webMarks
+                    if (effectiveToken.isBlank()) {
+                        return@withContext webMarks
+                    }
                 }
             }
 

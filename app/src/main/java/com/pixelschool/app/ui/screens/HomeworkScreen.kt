@@ -10,6 +10,7 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -169,14 +170,16 @@ fun HomeworkScreen(
     ) { 6 }
 
     LaunchedEffect(selectedDayIndex) {
-        if (pagerState.currentPage != selectedDayIndex) {
-            pagerState.animateScrollToPage(selectedDayIndex)
+        if (!pagerState.isScrollInProgress && pagerState.currentPage != selectedDayIndex) {
+            pagerState.scrollToPage(selectedDayIndex)
         }
     }
 
-    LaunchedEffect(pagerState.currentPage) {
-        if (selectedDayIndex != pagerState.currentPage) {
-            selectedDayIndex = pagerState.currentPage
+    LaunchedEffect(pagerState) {
+        snapshotFlow { pagerState.settledPage }.collect { settled ->
+            if (selectedDayIndex != settled) {
+                selectedDayIndex = settled
+            }
         }
     }
 
