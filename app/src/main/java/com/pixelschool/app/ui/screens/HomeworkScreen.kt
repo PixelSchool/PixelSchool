@@ -176,11 +176,19 @@ fun HomeworkScreen(
     }
 
     LaunchedEffect(pagerState) {
-        snapshotFlow { pagerState.settledPage }.collect { settled ->
-            if (selectedDayIndex != settled) {
-                selectedDayIndex = settled
+        snapshotFlow { pagerState.currentPage }.collect { page ->
+            if (selectedDayIndex != page) {
+                selectedDayIndex = page
             }
         }
+    }
+
+    val dayScrollState = rememberScrollState()
+    val activeIndex = pagerState.currentPage.coerceIn(0, 5)
+
+    LaunchedEffect(activeIndex) {
+        val approxTabWidth = 200
+        dayScrollState.animateScrollTo((activeIndex * approxTabWidth).coerceIn(0, dayScrollState.maxValue))
     }
 
     var statusFilter by remember { mutableStateOf(HomeworkStatusFilter.ALL) }
@@ -272,12 +280,12 @@ fun HomeworkScreen(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .horizontalScroll(rememberScrollState())
+                .horizontalScroll(dayScrollState)
                 .padding(horizontal = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             (0..5).forEach { index ->
-                val isSelected = index == selectedDayIndex
+                val isSelected = index == activeIndex
                 val dayDate = monday.plusDays(index.toLong())
                 val countForDay = homeworkList.count { HomeworkDateUtils.matchesDay(it, index, monday, schedule) }
 

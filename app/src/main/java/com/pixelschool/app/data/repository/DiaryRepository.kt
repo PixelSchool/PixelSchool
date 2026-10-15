@@ -58,6 +58,7 @@ class DiaryRepository(
 
     fun logout() {
         sessionStore.clear()
+        cacheStore?.clear()
         _session.value = null
     }
 
@@ -137,14 +138,15 @@ class DiaryRepository(
         val currentSession = _session.value
             ?: throw IllegalStateException("Сессия не найдена. Требуется авторизация.")
         if (currentSession.isDemo) {
-            val demoSchedule = if (weekOffset == -1) {
+            val rawDemo = if (weekOffset == -1) {
                 MockDataProvider.getNextWeekSchedule()
             } else {
                 MockDataProvider.getWeekSchedule()
             }
+            val demoSchedule = normalizeWeekSchedule(rawDemo, weekOffset)
             cacheStore?.saveScheduleCache(weekOffset, demoSchedule)
             if (weekOffset == 0) {
-                cacheStore?.saveScheduleCache(-1, MockDataProvider.getNextWeekSchedule())
+                cacheStore?.saveScheduleCache(-1, normalizeWeekSchedule(MockDataProvider.getNextWeekSchedule(), -1))
             }
             if (context != null) {
                 com.pixelschool.app.widget.ScheduleWidgetProvider.updateAllWidgets(context)
@@ -174,7 +176,7 @@ class DiaryRepository(
         )
 
         return if (remoteResult.isSuccess) {
-            val list = remoteResult.getOrThrow()
+            val list = normalizeWeekSchedule(remoteResult.getOrThrow(), weekOffset)
             cacheStore?.saveScheduleCache(weekOffset, list)
             cacheStore?.saveLastSyncTime()
             if (weekOffset == 0) {
@@ -191,7 +193,7 @@ class DiaryRepository(
                             weekOffset = -1
                         )
                         if (nextResult.isSuccess) {
-                            cacheStore?.saveScheduleCache(-1, nextResult.getOrThrow())
+                            cacheStore?.saveScheduleCache(-1, normalizeWeekSchedule(nextResult.getOrThrow(), -1))
                             if (context != null) {
                                 com.pixelschool.app.widget.ScheduleWidgetProvider.updateAllWidgets(context)
                             }
@@ -206,12 +208,52 @@ class DiaryRepository(
         } else {
             val cached = cacheStore?.getScheduleCache(weekOffset)
             if (cached != null && cached.isNotEmpty()) {
-                cached
+                normalizeWeekSchedule(cached, weekOffset)
             } else {
                 throw remoteResult.exceptionOrNull()
                     ?: Exception("Не удалось загрузить расписание из регионального дневника")
             }
         }
+    }
+
+    fun normalizeWeekSchedule(rawSchedule: List<DaySchedule>, weekOffset: Int): List<DaySchedule> {
+        val monday = com.pixelschool.app.ui.screens.HomeworkDateUtils.getMondayForOffset(weekOffset)
+        val dayNames = listOf("Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота")
+
+        val result = mutableListOf<DaySchedule>()
+        for (i in 0..5) {
+            val dayDate = monday.plusDays(i.toLong())
+            val expectedDayName = dayNames[i]
+            val dateFull = String.format(java.util.Locale.US, "%02d.%02d.%04d", dayDate.dayOfMonth, dayDate.monthValue, dayDate.year)
+            val dateShort = String.format(java.util.Locale.US, "%02d.%02d", dayDate.dayOfMonth, dayDate.monthValue)
+
+            val found = rawSchedule.firstOrNull { day ->
+                day.dayOfWeek.equals(expectedDayName, ignoreCase = true) ||
+                day.date == dateFull ||
+                day.date.startsWith(dateShort) ||
+                (day.date.contains(".") && day.date.take(5) == dateShort)
+            }
+
+            if (found != null) {
+                result.add(
+                    found.copy(
+                        date = if (found.date.isNotBlank()) found.date else dateFull,
+                        dayOfWeek = expectedDayName
+                    )
+                )
+            } else {
+                result.add(
+                    DaySchedule(
+                        date = dateFull,
+                        dayOfWeek = expectedDayName,
+                        lessons = emptyList(),
+                        isHoliday = false,
+                        holidayName = null
+                    )
+                )
+            }
+        }
+        return result
     }
 
     suspend fun getHomework(weekOffset: Int = 0): List<Homework> {
@@ -263,9 +305,13 @@ class DiaryRepository(
         return cacheStore?.toggleHomeworkCompleted(id) ?: false
     }
 
-    fun getCachedSchedule(weekOffset: Int): List<DaySchedule>? = cacheStore?.getScheduleCache(weekOffset)
+    fun getCachedSchedule(weekOffset: Int): List<DaySchedule>? {
+        val cached = cacheStore?.getScheduleCache(weekOffset) ?: return null
+        return normalizeWeekSchedule(cached, weekOffset)
+    }
     fun getCachedHomework(): List<Homework>? = cacheStore?.getHomeworkCache()
     fun getCachedGrades(): Pair<List<SubjectSummary>, List<AcademicPeriod>>? = cacheStore?.getGradesCache()
+    fun getAllCachedDays(): List<DaySchedule> = cacheStore?.getAllCachedDays() ?: emptyList()
     fun getLastSyncTime(): Long = cacheStore?.getLastSyncTime() ?: 0L
 
     suspend fun getMarks(days: String? = null): List<SubjectSummary> {
@@ -382,25 +428,45 @@ class DiaryRepository(
         newGrades: List<SubjectSummary>,
         periods: List<AcademicPeriod>
     ) {
-        val oldGrades = cacheStore?.getGradesCache()?.first ?: emptyList()
         cacheStore?.saveGradesCache(newGrades, periods)
 
-        if (context != null && oldGrades.isNotEmpty()) {
-            val oldKeys = oldGrades.flatMap { s ->
-                s.marks.map { "${s.subject}_${it.date}_${it.value}" }
-            }.toSet()
+        if (cacheStore == null) return
 
-            val addedMarks = mutableListOf<Pair<String, Mark>>()
-            newGrades.forEach { s ->
-                s.marks.forEach { m ->
-                    val key = "${s.subject}_${m.date}_${m.value}"
-                    if (!oldKeys.contains(key)) {
-                        addedMarks.add(Pair(s.subject, m))
-                    }
-                }
+        val currentMarkEntries = mutableListOf<Pair<String, Mark>>()
+        val currentMarkKeys = mutableSetOf<String>()
+
+        newGrades.forEach { subjectSummary ->
+            subjectSummary.marks.forEach { mark ->
+                val key = "${subjectSummary.subject}_${mark.date}_${mark.value}_${mark.weight}_${mark.comment ?: ""}"
+                currentMarkEntries.add(subjectSummary.subject to mark)
+                currentMarkKeys.add(key)
             }
+        }
 
-            if (addedMarks.isNotEmpty()) {
+        // 1. Initial baseline run after install: save current marks and DO NOT notify
+        if (!cacheStore.isMarksBaselineInitialized()) {
+            cacheStore.saveKnownMarkKeys(currentMarkKeys)
+            return
+        }
+
+        // 2. Baseline exists: find genuinely new marks added after installation
+        val knownKeys = cacheStore.getKnownMarkKeys()
+        val addedMarks = mutableListOf<Pair<String, Mark>>()
+
+        currentMarkEntries.forEach { (subject, mark) ->
+            val key = "${subject}_${mark.date}_${mark.value}_${mark.weight}_${mark.comment ?: ""}"
+            if (!knownKeys.contains(key)) {
+                addedMarks.add(subject to mark)
+            }
+        }
+
+        if (addedMarks.isNotEmpty()) {
+            val newKeysToAdd = addedMarks.map { (subject, mark) ->
+                "${subject}_${mark.date}_${mark.value}_${mark.weight}_${mark.comment ?: ""}"
+            }.toSet()
+            cacheStore.addKnownMarkKeys(newKeysToAdd)
+
+            if (context != null) {
                 com.pixelschool.app.notification.NotificationHelper.notifyNewMarks(context, addedMarks)
             }
         }

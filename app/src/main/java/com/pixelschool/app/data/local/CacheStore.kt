@@ -30,6 +30,34 @@ class CacheStore(context: Context) {
         private const val KEY_GRADES = "cache_grades_summary"
         private const val KEY_PERIODS = "cache_academic_periods"
         private const val KEY_LAST_SYNC_TIME = "cache_last_sync_timestamp"
+        private const val KEY_KNOWN_MARKS = "key_known_marks_set"
+        private const val KEY_BASELINE_INITIALIZED = "key_marks_baseline_initialized"
+    }
+
+    // --- New Marks Notification Baseline ---
+
+    fun isMarksBaselineInitialized(): Boolean {
+        return prefs.getBoolean(KEY_BASELINE_INITIALIZED, false)
+    }
+
+    fun getKnownMarkKeys(): Set<String> {
+        return prefs.getStringSet(KEY_KNOWN_MARKS, emptySet()) ?: emptySet()
+    }
+
+    fun saveKnownMarkKeys(keys: Set<String>) {
+        prefs.edit()
+            .putStringSet(KEY_KNOWN_MARKS, HashSet(keys))
+            .putBoolean(KEY_BASELINE_INITIALIZED, true)
+            .apply()
+    }
+
+    fun addKnownMarkKeys(newKeys: Set<String>) {
+        val current = HashSet(getKnownMarkKeys())
+        current.addAll(newKeys)
+        prefs.edit()
+            .putStringSet(KEY_KNOWN_MARKS, current)
+            .putBoolean(KEY_BASELINE_INITIALIZED, true)
+            .apply()
     }
 
     // --- Completed Homework State ---
@@ -126,6 +154,35 @@ class CacheStore(context: Context) {
         } catch (_: Exception) {
             null
         }
+    }
+
+    fun getAllCachedDays(): List<DaySchedule> {
+        val result = mutableListOf<DaySchedule>()
+        try {
+            prefs.all.forEach { (key, value) ->
+                if (key.startsWith(PREFIX_SCHEDULE) && value is String) {
+                    val array = JSONArray(value)
+                    for (i in 0 until array.length()) {
+                        val dayObj = array.getJSONObject(i)
+                        val lessonsArr = dayObj.optJSONArray("lessons") ?: JSONArray()
+                        val lessons = mutableListOf<Lesson>()
+                        for (j in 0 until lessonsArr.length()) {
+                            lessons.add(deserializeLesson(lessonsArr.getJSONObject(j)))
+                        }
+                        result.add(
+                            DaySchedule(
+                                date = dayObj.optString("date"),
+                                dayOfWeek = dayObj.optString("dayOfWeek"),
+                                isHoliday = dayObj.optBoolean("isHoliday", false),
+                                holidayName = dayObj.optString("holidayName").ifEmpty { null },
+                                lessons = lessons
+                            )
+                        )
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+        return result.distinctBy { it.date }
     }
 
     // --- Homework Cache ---

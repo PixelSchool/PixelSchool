@@ -83,17 +83,37 @@ fun ScheduleScreen(
         initialPage = selectedDayIndex.coerceIn(0, (schedule.size - 1).coerceAtLeast(0))
     ) { schedule.size }
 
+    var hasInitializedInitialPage by remember { mutableStateOf(schedule.isNotEmpty()) }
+
+    LaunchedEffect(schedule.size) {
+        if (schedule.isNotEmpty() && !hasInitializedInitialPage) {
+            val target = selectedDayIndex.coerceIn(schedule.indices)
+            pagerState.scrollToPage(target)
+            hasInitializedInitialPage = true
+        }
+    }
+
     LaunchedEffect(selectedDayIndex) {
         if (schedule.isNotEmpty() && selectedDayIndex in schedule.indices && !pagerState.isScrollInProgress && pagerState.currentPage != selectedDayIndex) {
             pagerState.scrollToPage(selectedDayIndex)
         }
     }
 
-    LaunchedEffect(pagerState, schedule.size) {
-        snapshotFlow { pagerState.settledPage }.collect { settled ->
-            if (schedule.isNotEmpty() && settled in schedule.indices && settled != selectedDayIndex) {
-                onSelectDay(settled)
+    LaunchedEffect(pagerState) {
+        snapshotFlow { pagerState.currentPage }.collect { page ->
+            if (schedule.isNotEmpty() && hasInitializedInitialPage && page in schedule.indices && page != selectedDayIndex) {
+                onSelectDay(page)
             }
+        }
+    }
+
+    val dayScrollState = rememberScrollState()
+    val activeIndex = if (pagerState.currentPage in schedule.indices) pagerState.currentPage else selectedDayIndex
+
+    LaunchedEffect(activeIndex) {
+        if (schedule.isNotEmpty() && activeIndex in schedule.indices) {
+            val approxTabWidth = 220
+            dayScrollState.animateScrollTo((activeIndex * approxTabWidth).coerceIn(0, dayScrollState.maxValue))
         }
     }
 
@@ -166,20 +186,20 @@ fun ScheduleScreen(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .horizontalScroll(rememberScrollState())
+                .horizontalScroll(dayScrollState)
                 .padding(horizontal = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             schedule.forEachIndexed { index, day ->
-                val isSelected = index == selectedDayIndex
-                val shortDay = when (day.dayOfWeek) {
-                    "Понедельник" -> "Пн"
-                    "Вторник" -> "Вт"
-                    "Среда" -> "Ср"
-                    "Четверг" -> "Чт"
-                    "Пятница" -> "Пт"
-                    "Суббота" -> "Сб"
-                    "Воскресенье" -> "Вс"
+                val isSelected = index == activeIndex
+                val shortDay = when {
+                    day.dayOfWeek.contains("Понедельник", ignoreCase = true) || day.dayOfWeek.startsWith("Пн", ignoreCase = true) -> "Пн"
+                    day.dayOfWeek.contains("Вторник", ignoreCase = true) || day.dayOfWeek.startsWith("Вт", ignoreCase = true) -> "Вт"
+                    day.dayOfWeek.contains("Среда", ignoreCase = true) || day.dayOfWeek.startsWith("Ср", ignoreCase = true) -> "Ср"
+                    day.dayOfWeek.contains("Четверг", ignoreCase = true) || day.dayOfWeek.startsWith("Чт", ignoreCase = true) -> "Чт"
+                    day.dayOfWeek.contains("Пятница", ignoreCase = true) || day.dayOfWeek.startsWith("Пт", ignoreCase = true) -> "Пт"
+                    day.dayOfWeek.contains("Суббота", ignoreCase = true) || day.dayOfWeek.startsWith("Сб", ignoreCase = true) -> "Сб"
+                    day.dayOfWeek.contains("Воскресенье", ignoreCase = true) || day.dayOfWeek.startsWith("Вс", ignoreCase = true) -> "Вс"
                     else -> day.dayOfWeek.take(2)
                 }
 

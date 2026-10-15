@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -59,9 +60,19 @@ import androidx.compose.foundation.pager.rememberPagerState
 import kotlinx.coroutines.launch
 import kotlin.math.ceil
 import com.pixelschool.app.data.model.AcademicPeriod
+import com.pixelschool.app.data.model.DaySchedule
 import com.pixelschool.app.data.model.Mark
 import com.pixelschool.app.data.model.PeriodMarks
 import com.pixelschool.app.data.model.SubjectSummary
+import com.pixelschool.app.data.local.SettingsStore
+import com.pixelschool.app.data.ai.AiStudyAssistant
+import com.pixelschool.app.data.ai.AiStudyResult
+import com.pixelschool.app.data.ai.ProblemLesson
+import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.IconButton
+import androidx.compose.runtime.collectAsState
 import com.pixelschool.app.ui.components.ExpressiveGradeBadge
 import java.util.Locale
 
@@ -72,11 +83,14 @@ fun MarksScreen(
     periods: List<AcademicPeriod> = emptyList(),
     selectedPeriodIndex: Int = 0,
     onSelectPeriod: (Int) -> Unit = {},
+    allDays: List<DaySchedule> = emptyList(),
+    settingsStore: SettingsStore? = null,
     modifier: Modifier = Modifier
 ) {
     val coroutineScope = rememberCoroutineScope()
     var selectedSubject by remember { mutableStateOf<SubjectSummary?>(null) }
     var showGpaAnalysis by remember { mutableStateOf(false) }
+    var studySubject by remember { mutableStateOf<SubjectSummary?>(null) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
 
     val periodTitles = remember(periods) {
@@ -261,7 +275,7 @@ fun MarksScreen(
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
-                                    text = if (pageAverage >= 4.5f) "Отлично" else if (pageAverage >= 3.6f) "Хорошо" else if (pageAverage > 0f) "Внимание" else "Нет данных",
+                                    text = if (pageAverage >= 4.5f) "Отлично" else if (pageAverage >= 3.5f) "Хорошо" else if (pageAverage > 0f) "Внимание" else "Нет данных",
                                     style = MaterialTheme.typography.labelLarge,
                                     color = MaterialTheme.colorScheme.onPrimary,
                                     fontWeight = FontWeight.Bold
@@ -356,7 +370,19 @@ fun MarksScreen(
             subjects = currentDisplayedSubjects,
             overallAverage = currentOverallAverage,
             isYearTab = selectedTabIndex == allTabs.lastIndex,
+            onSelectSubject = { sub ->
+                studySubject = sub
+            },
             onDismiss = { showGpaAnalysis = false }
+        )
+    }
+
+    studySubject?.let { sub ->
+        SubjectStudyBottomSheet(
+            subject = sub,
+            allDays = allDays,
+            settingsStore = settingsStore,
+            onDismiss = { studySubject = null }
         )
     }
 
@@ -806,6 +832,7 @@ fun GpaAnalysisBottomSheet(
     subjects: List<SubjectSummary>,
     overallAverage: Float,
     isYearTab: Boolean,
+    onSelectSubject: (SubjectSummary) -> Unit,
     onDismiss: () -> Unit
 ) {
     ModalBottomSheet(
@@ -859,9 +886,9 @@ fun GpaAnalysisBottomSheet(
             Spacer(modifier = Modifier.height(20.dp))
 
             val validSubjects = subjects.filter { it.average > 0f }
-            val needAttention = validSubjects.filter { it.average < 3.60f }
-            val closeToFive = validSubjects.filter { it.average in 3.60f..4.59f }
-            val solidFives = validSubjects.filter { it.average >= 4.60f }
+            val needAttention = validSubjects.filter { it.average < 3.50f }
+            val closeToFive = validSubjects.filter { it.average in 3.50f..4.49f }
+            val solidFives = validSubjects.filter { it.average >= 4.50f }
 
             if (needAttention.isEmpty() && closeToFive.isEmpty()) {
                 Surface(
@@ -892,7 +919,7 @@ fun GpaAnalysisBottomSheet(
 
             if (needAttention.isNotEmpty()) {
                 Text(
-                    text = "⚠️ Требуют внимания (< 3.60)",
+                    text = "⚠️ Требуют внимания (< 3.50)",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.error
@@ -900,13 +927,14 @@ fun GpaAnalysisBottomSheet(
                 Spacer(modifier = Modifier.height(8.dp))
 
                 needAttention.forEach { sub ->
-                    val neededForFour = calculateNeededMarks(sub.marks, 3.60)
-                    val neededForFive = calculateNeededMarks(sub.marks, 4.60)
+                    val neededForFour = calculateNeededMarks(sub.marks, 3.50)
+                    val neededForFive = calculateNeededMarks(sub.marks, 4.50)
 
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 4.dp),
+                            .padding(vertical = 4.dp)
+                            .clickable { onSelectSubject(sub) },
                         shape = RoundedCornerShape(18.dp),
                         colors = CardDefaults.cardColors(
                             containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f)
@@ -935,11 +963,23 @@ fun GpaAnalysisBottomSheet(
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = "• До 5 (отлично): нужно получить $neededForFive ${pluralMarks(neededForFive)} «5»",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "• До 5 (отлично): нужно получить $neededForFive ${pluralMarks(neededForFive)} «5»",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = "Анализ тем с ИИ ›",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
                         }
                     }
                 }
@@ -949,7 +989,7 @@ fun GpaAnalysisBottomSheet(
 
             if (closeToFive.isNotEmpty()) {
                 Text(
-                    text = "🎯 Близко к пятёрке (3.60 — 4.59)",
+                    text = "🎯 Близко к пятёрке (3.50 — 4.49)",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary
@@ -957,12 +997,13 @@ fun GpaAnalysisBottomSheet(
                 Spacer(modifier = Modifier.height(8.dp))
 
                 closeToFive.forEach { sub ->
-                    val neededForFive = calculateNeededMarks(sub.marks, 4.60)
+                    val neededForFive = calculateNeededMarks(sub.marks, 4.50)
 
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 4.dp),
+                            .padding(vertical = 4.dp)
+                            .clickable { onSelectSubject(sub) },
                         shape = RoundedCornerShape(18.dp),
                         colors = CardDefaults.cardColors(
                             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
@@ -987,6 +1028,13 @@ fun GpaAnalysisBottomSheet(
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.primary,
                                     fontWeight = FontWeight.Medium
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "Нажми для разбора тем с ИИ ›",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f),
+                                    fontWeight = FontWeight.Bold
                                 )
                             }
                             Spacer(modifier = Modifier.width(12.dp))
@@ -1072,5 +1120,353 @@ private fun pluralMarks(n: Int): String {
         1 -> "оценку"
         2, 3, 4 -> "оценки"
         else -> "оценок"
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SubjectStudyBottomSheet(
+    subject: SubjectSummary,
+    allDays: List<DaySchedule>,
+    settingsStore: SettingsStore?,
+    onDismiss: () -> Unit
+) {
+    val coroutineScope = rememberCoroutineScope()
+    val geminiKey = settingsStore?.geminiApiKey?.collectAsState()?.value ?: ""
+
+    var studyResult by remember(subject, geminiKey) { mutableStateOf<AiStudyResult?>(null) }
+    var isLoading by remember(subject, geminiKey) { mutableStateOf(true) }
+
+    LaunchedEffect(subject, geminiKey) {
+        isLoading = true
+        studyResult = if (geminiKey.isNotBlank()) {
+            AiStudyAssistant.analyzeWithGemini(geminiKey, subject.subject, subject.average, subject.marks, allDays)
+        } else {
+            AiStudyAssistant.generateLocalAnalysis(subject.subject, subject.average, subject.marks, allDays)
+        }
+        isLoading = false
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false),
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.85f)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 24.dp)
+                .padding(top = 8.dp, bottom = 48.dp)
+        ) {
+            // Header
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = subject.subject,
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "Разбор успеваемости и тем уроков",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                ExpressiveGradeBadge(
+                    value = String.format(Locale.US, "%.2f", subject.average),
+                    isLarge = true
+                )
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Goal & Fives calculation card (Cutoff is strictly .50)
+            val targetCutoff = if (subject.average < 3.50f) 3.50 else 4.50
+            val neededFives = studyResult?.neededFivesForGoal ?: AiStudyAssistant.calculateNeededFives(subject.marks, targetCutoff)
+            val goalText = if (subject.average < 3.50f) "«4» (Хорошо)" else "«5» (Отлично)"
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+                )
+            ) {
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Star,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(28.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column {
+                        Text(
+                            text = "Цель: $goalText",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = if (neededFives > 0)
+                                "Нужно ещё $neededFives ${pluralMarks(neededFives)} «5» с весом 1"
+                            else
+                                "Балл уже на уровне отличной оценки!",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f)
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // AI / Local Study Recommendation Card
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+                )
+            ) {
+                Column(modifier = Modifier.padding(18.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Rounded.AutoAwesome,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Рекомендации помощника",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = if (studyResult?.isAiGenerated == true)
+                                MaterialTheme.colorScheme.primary
+                            else
+                                MaterialTheme.colorScheme.secondaryContainer
+                        ) {
+                            Text(
+                                text = if (studyResult?.isAiGenerated == true) "🤖 Gemini AI" else "⚡ Встроенный анализ",
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = if (studyResult?.isAiGenerated == true)
+                                    MaterialTheme.colorScheme.onPrimary
+                                else
+                                    MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    if (isLoading) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 16.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(24.dp),
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text(
+                                text = "Анализируем уроки и темы...",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    } else {
+                        studyResult?.errorMessage?.let { err ->
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(bottom = 10.dp)
+                            ) {
+                                Text(
+                                    text = err,
+                                    modifier = Modifier.padding(10.dp),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onErrorContainer
+                                )
+                            }
+                        }
+
+                        Text(
+                            text = studyResult?.studySummary ?: "Нет данных для анализа",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            lineHeight = 22.sp
+                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End
+                        ) {
+                            IconButton(
+                                onClick = {
+                                    coroutineScope.launch {
+                                        isLoading = true
+                                        studyResult = if (geminiKey.isNotBlank()) {
+                                            AiStudyAssistant.analyzeWithGemini(geminiKey, subject.subject, subject.average, subject.marks, allDays)
+                                        } else {
+                                            AiStudyAssistant.generateLocalAnalysis(subject.subject, subject.average, subject.marks, allDays)
+                                        }
+                                        isLoading = false
+                                    }
+                                }
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Refresh,
+                                    contentDescription = "Обновить анализ",
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            // Problem Lessons Journal
+            val problems = studyResult?.problemLessons ?: AiStudyAssistant.extractProblemLessons(subject.subject, subject.marks, allDays)
+
+            Text(
+                text = "Уроки с оценками 2 и 3 (${problems.size})",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            if (problems.isEmpty()) {
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "Отлично! В журнале нет зафиксированных двоек и троек по этому предмету.",
+                        modifier = Modifier.padding(16.dp),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    problems.forEach { item ->
+                        Surface(
+                            shape = RoundedCornerShape(16.dp),
+                            color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.6f),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(14.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        ExpressiveGradeBadge(value = item.mark.value)
+                                        Spacer(modifier = Modifier.width(10.dp))
+                                        Text(
+                                            text = item.date,
+                                            style = MaterialTheme.typography.labelLarge,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                    }
+                                    if (item.isControl) {
+                                        Surface(
+                                            shape = RoundedCornerShape(8.dp),
+                                            color = MaterialTheme.colorScheme.errorContainer
+                                        ) {
+                                            Text(
+                                                text = "Контрольная",
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.onErrorContainer
+                                            )
+                                        }
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(8.dp))
+
+                                Text(
+                                    text = "Тема: ${item.topic}",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+
+                                if (!item.comment.isNullOrBlank() && item.comment != item.topic) {
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = "За что: ${item.comment}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+
+                                if (!item.homework.isNullOrBlank()) {
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = "ДЗ: ${item.homework}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+
+                                if (!item.teacher.isNullOrBlank()) {
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = "Учитель: ${item.teacher}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.outline
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }

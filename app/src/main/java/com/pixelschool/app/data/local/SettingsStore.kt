@@ -44,4 +44,13 @@ class SettingsStore(context: Context) {
         prefs.edit().putBoolean("key_notifications_enabled", enabled).apply()
         _notificationsEnabled.value = enabled
     }
+
+    private val _geminiApiKey = MutableStateFlow(prefs.getString("key_gemini_api_key", "") ?: "")
+    val geminiApiKey: StateFlow<String> = _geminiApiKey.asStateFlow()
+
+    fun setGeminiApiKey(key: String) {
+        val trimmed = key.trim()
+        prefs.edit().putString("key_gemini_api_key", trimmed).apply()
+        _geminiApiKey.value = trimmed
+    }
 }

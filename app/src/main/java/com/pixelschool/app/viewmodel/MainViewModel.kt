@@ -66,9 +66,15 @@ class MainViewModel(
     val updateInfo: StateFlow<com.pixelschool.app.data.remote.AppUpdateInfo?> = _updateInfo.asStateFlow()
 
     init {
-        // Immediately populate UI from cache for 0ms startup
-        repository.getCachedSchedule(currentWeekOffset.value)?.let {
-            if (it.isNotEmpty()) _schedule.value = it
+        val defaultOffset = currentWeekOffset.value
+        val defaultDay = HomeworkDateUtils.calculateDefaultDayIndex()
+        repository.getCachedSchedule(defaultOffset)?.let {
+            if (it.isNotEmpty()) {
+                _schedule.value = it
+                if (defaultOffset == HomeworkDateUtils.calculateDefaultWeekOffset() && defaultDay in it.indices) {
+                    _selectedDayIndex.value = defaultDay
+                }
+            }
         }
         repository.getCachedHomework()?.let {
             if (it.isNotEmpty()) _homework.value = it
@@ -164,8 +170,15 @@ class MainViewModel(
         } catch (_: Exception) {}
 
         try {
-            _schedule.value = repository.getSchedule(_currentWeekOffset.value)
+            val fetchedSchedule = repository.getSchedule(_currentWeekOffset.value)
+            _schedule.value = fetchedSchedule
             _homework.value = repository.getHomework(_currentWeekOffset.value)
+            if (_currentWeekOffset.value == HomeworkDateUtils.calculateDefaultWeekOffset()) {
+                val targetDay = HomeworkDateUtils.calculateDefaultDayIndex()
+                if (targetDay in fetchedSchedule.indices) {
+                    _selectedDayIndex.value = targetDay
+                }
+            }
         } catch (e: Exception) {
             if (e is SessionExpiredException) {
                 _errorMessage.value = e.message ?: "Сессия устарела. Требуется повторный вход."
@@ -219,6 +232,12 @@ class MainViewModel(
         _errorMessage.value = errorToDisplay
         _errorState.value = errorUiToDisplay
         if (showLoadingIndicator) _isLoading.value = false
+    }
+
+    fun getAllKnownDays(): List<DaySchedule> {
+        val cached = repository.getAllCachedDays()
+        val current = _schedule.value
+        return (cached + current).distinctBy { it.date }
     }
 
     fun loadData() {

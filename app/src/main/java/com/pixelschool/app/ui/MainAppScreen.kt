@@ -20,9 +20,14 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Logout
+import androidx.compose.material.icons.automirrored.rounded.ArrowForwardIos
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.School
 import androidx.compose.material.icons.rounded.Warning
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextButton
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.ui.platform.LocalContext
@@ -246,11 +251,15 @@ fun MainAppScreen(
                         val marks by viewModel.marks.collectAsState()
                         val periods by viewModel.periods.collectAsState()
                         val selectedPeriodIndex by viewModel.selectedPeriodIndex.collectAsState()
+                        val schedule by viewModel.schedule.collectAsState()
+                        val allDays = remember(schedule) { viewModel.getAllKnownDays() }
                         MarksScreen(
                             subjects = marks,
                             periods = periods,
                             selectedPeriodIndex = selectedPeriodIndex,
-                            onSelectPeriod = { viewModel.selectPeriod(it) }
+                            onSelectPeriod = { viewModel.selectPeriod(it) },
+                            allDays = allDays,
+                            settingsStore = settingsStore
                         )
                     }
                     Screen.Profile -> {
@@ -555,6 +564,111 @@ fun ProfileScreen(
                         }
                     }
                 }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+        }
+
+        if (settingsStore != null) {
+            val geminiKey by settingsStore.geminiApiKey.collectAsState()
+            var showApiKeyDialog by remember { mutableStateOf(false) }
+
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { showApiKeyDialog = true },
+                shape = RoundedCornerShape(22.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f)
+                )
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(18.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Rounded.AutoAwesome,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "ИИ-Помощник (Gemini API)",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = if (geminiKey.isNotBlank()) "Ключ настроен • Онлайн-разбор тем" else "Локальный режим • Без ключа",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (geminiKey.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Rounded.ArrowForwardIos,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            if (showApiKeyDialog) {
+                var tempKey by remember { mutableStateOf(geminiKey) }
+                AlertDialog(
+                    onDismissRequest = { showApiKeyDialog = false },
+                    title = {
+                        Text("Ключ Gemini API", fontWeight = FontWeight.Bold)
+                    },
+                    text = {
+                        Column {
+                            Text(
+                                text = "Для персонального разбора тем, шпаргалок и вопросов укажите ключ Gemini. Если поле пустое, работает встроенный локальный анализатор.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            OutlinedTextField(
+                                value = tempKey,
+                                onValueChange = { tempKey = it },
+                                label = { Text("API Key") },
+                                placeholder = { Text("AIzaSy...") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            settingsStore.setGeminiApiKey(tempKey)
+                            showApiKeyDialog = false
+                        }) {
+                            Text("Сохранить")
+                        }
+                    },
+                    dismissButton = {
+                        if (geminiKey.isNotBlank()) {
+                            TextButton(onClick = {
+                                settingsStore.setGeminiApiKey("")
+                                showApiKeyDialog = false
+                            }) {
+                                Text("Очистить", color = MaterialTheme.colorScheme.error)
+                            }
+                        } else {
+                            TextButton(onClick = { showApiKeyDialog = false }) {
+                                Text("Отмена")
+                            }
+                        }
+                    }
+                )
             }
 
             Spacer(modifier = Modifier.height(14.dp))

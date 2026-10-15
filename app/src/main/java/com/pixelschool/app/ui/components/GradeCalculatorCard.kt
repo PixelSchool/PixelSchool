@@ -55,8 +55,8 @@ fun GradeCalculatorCard(
         marks.mapNotNull { it.numericValue?.toInt() }
     }
 
-    // Selected target goal: 4.60 (for 5), 3.60 (for 4), 2.60 (for 3)
-    var targetGrade by remember { mutableFloatStateOf(4.60f) }
+    // Selected target goal: 4.50 (for 5), 3.50 (for 4), 2.50 (for 3)
+    var targetGrade by remember { mutableFloatStateOf(4.50f) }
 
     // Simulated additional marks added by the user
     val simulatedMarks = remember { mutableStateListOf<Int>() }
@@ -151,15 +151,15 @@ fun GradeCalculatorCard(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 GoalChip(
-                    label = "На «5» (от 4.60)",
-                    selected = targetGrade == 4.60f,
-                    onClick = { targetGrade = 4.60f },
+                    label = "На «5» (от 4.50)",
+                    selected = targetGrade == 4.50f,
+                    onClick = { targetGrade = 4.50f },
                     modifier = Modifier.weight(1f)
                 )
                 GoalChip(
-                    label = "На «4» (от 3.60)",
-                    selected = targetGrade == 3.60f,
-                    onClick = { targetGrade = 3.60f },
+                    label = "На «4» (от 3.50)",
+                    selected = targetGrade == 3.50f,
+                    onClick = { targetGrade = 3.50f },
                     modifier = Modifier.weight(1f)
                 )
             }
