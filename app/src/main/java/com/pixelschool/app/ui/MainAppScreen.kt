@@ -349,9 +349,9 @@ fun ProfileScreen(
         val context = LocalContext.current
         val appVersion = remember(context) {
             try {
-                context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "1.3.0"
+                context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: com.pixelschool.app.BuildConfig.VERSION_NAME
             } catch (_: Exception) {
-                "1.3.0"
+                com.pixelschool.app.BuildConfig.VERSION_NAME
             }
         }
         Card(
