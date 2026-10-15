@@ -51,12 +51,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.material.icons.rounded.Share
+import com.pixelschool.app.data.local.AppThemePalette
 import com.pixelschool.app.data.model.DaySchedule
+import com.pixelschool.app.data.model.Homework
 import com.pixelschool.app.data.model.Lesson
 import com.pixelschool.app.data.model.sortedByTime
 import com.pixelschool.app.ui.components.AttachmentChip
 import com.pixelschool.app.ui.components.ExpressiveGradeBadge
 import com.pixelschool.app.ui.components.LessonExpressiveCard
+import com.pixelschool.app.ui.components.ShareScheduleBottomSheet
 
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -74,10 +78,13 @@ fun ScheduleScreen(
     weekOffset: Int = 0,
     onChangeWeekOffset: (Int) -> Unit = {},
     onResetWeekOffset: () -> Unit = {},
+    homeworkList: List<Homework>? = null,
+    palette: AppThemePalette = AppThemePalette.DYNAMIC,
     modifier: Modifier = Modifier
 ) {
     val coroutineScope = rememberCoroutineScope()
     var selectedLesson by remember { mutableStateOf<Lesson?>(null) }
+    var dayToShare by remember { mutableStateOf<DaySchedule?>(null) }
 
     val pagerState = rememberPagerState(
         initialPage = selectedDayIndex.coerceIn(0, (schedule.size - 1).coerceAtLeast(0))
@@ -351,16 +358,32 @@ fun ScheduleScreen(
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.Bold
                                 )
-                                Surface(
-                                    shape = RoundedCornerShape(8.dp),
-                                    color = MaterialTheme.colorScheme.primaryContainer
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
-                                    Text(
-                                        text = "${currentDay.lessons.size} уроков",
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-                                        style = MaterialTheme.typography.labelMedium,
-                                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                                    )
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = MaterialTheme.colorScheme.primaryContainer
+                                    ) {
+                                        Text(
+                                            text = "${currentDay.lessons.size} уроков",
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                                        )
+                                    }
+                                    IconButton(
+                                        onClick = { dayToShare = currentDay },
+                                        modifier = Modifier.size(32.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Share,
+                                            contentDescription = "Поделиться",
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -388,6 +411,15 @@ fun ScheduleScreen(
         LessonDetailBottomSheet(
             lesson = selectedLesson!!,
             onDismiss = { selectedLesson = null }
+        )
+    }
+
+    if (dayToShare != null) {
+        ShareScheduleBottomSheet(
+            day = dayToShare!!,
+            homeworkList = homeworkList,
+            palette = palette,
+            onDismiss = { dayToShare = null }
         )
     }
 }

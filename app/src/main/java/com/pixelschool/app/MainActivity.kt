@@ -50,6 +50,9 @@ class MainActivity : ComponentActivity() {
         if (settingsStore.notificationsEnabled.value) {
             com.pixelschool.app.notification.MarksSyncWorker.schedule(applicationContext)
         }
+        if (settingsStore.homeworkReminderEnabled.value) {
+            com.pixelschool.app.notification.HomeworkReminderWorker.schedule(applicationContext)
+        }
 
         setContent {
             val palette by settingsStore.themePalette.collectAsState()

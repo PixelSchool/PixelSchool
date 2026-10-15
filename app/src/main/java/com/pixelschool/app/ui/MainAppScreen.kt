@@ -64,6 +64,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Notifications
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.Switch
 import com.pixelschool.app.data.local.AppThemePalette
 import com.pixelschool.app.data.local.SettingsStore
@@ -75,7 +76,9 @@ import com.pixelschool.app.ui.screens.AuthScreen
 import com.pixelschool.app.ui.screens.HomeworkScreen
 import com.pixelschool.app.ui.screens.MarksScreen
 import com.pixelschool.app.ui.screens.ScheduleScreen
+import com.pixelschool.app.ui.screens.SettingsScreen
 import com.pixelschool.app.viewmodel.MainViewModel
+import kotlinx.coroutines.flow.MutableStateFlow
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -99,9 +102,21 @@ fun MainAppScreen(
         )
     } else {
         var currentScreen by remember { mutableStateOf<Screen>(Screen.Schedule) }
+        var showSettingsScreen by remember { mutableStateOf(false) }
         val navItems = listOf(Screen.Schedule, Screen.Homework, Screen.Marks, Screen.Profile)
 
-        Scaffold(
+        if (showSettingsScreen) {
+            val context = LocalContext.current
+            val safeSettingsStore = settingsStore ?: remember(context) { SettingsStore(context) }
+            val updateInfo by viewModel.updateInfo.collectAsState()
+            SettingsScreen(
+                settingsStore = safeSettingsStore,
+                updateInfo = updateInfo,
+                onCheckUpdates = { viewModel.checkForUpdates() },
+                onBack = { showSettingsScreen = false }
+            )
+        } else {
+            Scaffold(
             topBar = {
                 AppTopBar(
                     title = currentScreen.title
@@ -223,28 +238,34 @@ fun MainAppScreen(
                     when (screen) {
                     Screen.Schedule -> {
                         val schedule by viewModel.schedule.collectAsState()
+                        val homework by viewModel.homework.collectAsState()
                         val selectedDayIndex by viewModel.selectedDayIndex.collectAsState()
                         val currentWeekOffset by viewModel.currentWeekOffset.collectAsState()
+                        val currentPalette by (settingsStore?.themePalette ?: remember { MutableStateFlow(AppThemePalette.DYNAMIC) }).collectAsState()
                         ScheduleScreen(
                             schedule = schedule,
                             selectedDayIndex = selectedDayIndex,
                             onSelectDay = { viewModel.selectDay(it) },
                             weekOffset = currentWeekOffset,
                             onChangeWeekOffset = { viewModel.changeWeekOffset(it) },
-                            onResetWeekOffset = { viewModel.resetWeekOffset() }
+                            onResetWeekOffset = { viewModel.resetWeekOffset() },
+                            homeworkList = homework,
+                            palette = currentPalette
                         )
                     }
                     Screen.Homework -> {
                         val homework by viewModel.homework.collectAsState()
                         val schedule by viewModel.schedule.collectAsState()
                         val currentWeekOffset by viewModel.currentWeekOffset.collectAsState()
+                        val currentPalette by (settingsStore?.themePalette ?: remember { MutableStateFlow(AppThemePalette.DYNAMIC) }).collectAsState()
                         HomeworkScreen(
                             homeworkList = homework,
                             onToggleCompleted = { viewModel.toggleHomework(it) },
                             weekOffset = currentWeekOffset,
                             onChangeWeekOffset = { viewModel.changeWeekOffset(it) },
                             onResetWeekOffset = { viewModel.resetWeekOffset() },
-                            schedule = schedule
+                            schedule = schedule,
+                            palette = currentPalette
                         )
                     }
                     Screen.Marks -> {
@@ -267,7 +288,7 @@ fun MainAppScreen(
                         ProfileScreen(
                             profile = profileState,
                             updateInfo = updateInfo,
-                            settingsStore = settingsStore,
+                            onOpenSettings = { showSettingsScreen = true },
                             onCheckUpdates = { viewModel.checkForUpdates() },
                             onLogout = { viewModel.logout() }
                         )
@@ -279,12 +300,13 @@ fun MainAppScreen(
 }
 }
 }
+}
 
 @Composable
 fun ProfileScreen(
     profile: ProfileUiState,
     updateInfo: com.pixelschool.app.data.remote.AppUpdateInfo? = null,
-    settingsStore: SettingsStore? = null,
+    onOpenSettings: () -> Unit,
     onCheckUpdates: () -> Unit = {},
     onLogout: () -> Unit,
     modifier: Modifier = Modifier
@@ -354,6 +376,67 @@ fun ProfileScreen(
 
         Spacer(modifier = Modifier.height(28.dp))
 
+        // Settings Button Card
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onOpenSettings),
+            shape = RoundedCornerShape(22.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f)
+            )
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(18.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        modifier = Modifier.size(46.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Rounded.Settings,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                    }
+                    Column {
+                        Text(
+                            text = "Настройки приложения",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "Тема, уведомления, ИИ, напоминания о ДЗ",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                Icon(
+                    imageVector = Icons.AutoMirrored.Rounded.ArrowForwardIos,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(14.dp))
+
         // Update Card
         val context = LocalContext.current
         val appVersion = remember(context) {
@@ -373,337 +456,65 @@ fun ProfileScreen(
                     MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f)
             )
         ) {
-            Column(modifier = Modifier.padding(18.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = if (updateInfo?.isUpdateAvailable == true)
-                                "Доступно обновление v${updateInfo.latestVersion}"
-                            else
-                                "Версия приложения: $appVersion",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = if (updateInfo?.isUpdateAvailable == true)
-                                "Новый стабильный релиз на GitHub"
-                            else
-                                "Установлена актуальная версия",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-
-                    if (updateInfo?.isUpdateAvailable == true) {
-                        Button(
-                            onClick = {
-                                val url = updateInfo.apkDownloadUrl ?: updateInfo.releaseUrl
-                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-                                context.startActivity(intent)
-                            },
-                            modifier = Modifier
-                                .padding(start = 12.dp)
-                                .height(40.dp),
-                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Text(
-                                text = "Обновить",
-                                style = MaterialTheme.typography.labelLarge,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    } else {
-                        IconButton(onClick = onCheckUpdates) {
-                            Icon(
-                                imageVector = Icons.Rounded.Refresh,
-                                contentDescription = "Проверить",
-                                tint = MaterialTheme.colorScheme.outline
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(14.dp))
-
-        if (settingsStore != null) {
-            val notificationsEnabled by settingsStore.notificationsEnabled.collectAsState()
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(22.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f)
-                )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(18.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(18.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(42.dp)
-                            .background(
-                                color = MaterialTheme.colorScheme.primaryContainer,
-                                shape = RoundedCornerShape(12.dp)
-                            ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Notifications,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(14.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Уведомления об оценках",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = "Периодическая проверка и уведомления о новых оценках",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Switch(
-                        checked = notificationsEnabled,
-                        onCheckedChange = { isChecked ->
-                            settingsStore.setNotificationsEnabled(isChecked)
-                            if (isChecked) {
-                                MarksSyncWorker.schedule(context)
-                            } else {
-                                MarksSyncWorker.cancel(context)
-                            }
-                        }
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(14.dp))
-        }
-
-        if (settingsStore != null) {
-            val currentPalette by settingsStore.themePalette.collectAsState()
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(22.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f)
-                )
-            ) {
-                Column(modifier = Modifier.padding(18.dp)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Palette,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Text(
-                            text = "Цветовая тема (Material 3)",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(4.dp))
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Приятные акцентные цвета для Material 3 Expressive",
+                        text = if (updateInfo?.isUpdateAvailable == true)
+                            "Доступно обновление v${updateInfo.latestVersion}"
+                        else
+                            "Версия приложения: $appVersion",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = if (updateInfo?.isUpdateAvailable == true)
+                            "Новый стабильный релиз на GitHub"
+                        else
+                            "Установлена актуальная версия",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Spacer(modifier = Modifier.height(14.dp))
-
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        AppThemePalette.values().forEach { palette ->
-                            val isSelected = currentPalette == palette
-                            Surface(
-                                shape = RoundedCornerShape(16.dp),
-                                color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
-                                modifier = Modifier
-                                    .clickable { settingsStore.setThemePalette(palette) }
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(20.dp)
-                                            .clip(RoundedCornerShape(10.dp))
-                                            .background(palette.previewColor)
-                                    )
-                                    Text(
-                                        text = palette.title.substringBefore(" ("),
-                                        style = MaterialTheme.typography.labelMedium,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                        color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
-                                    )
-                                }
-                            }
-                        }
-                    }
                 }
-            }
 
-            Spacer(modifier = Modifier.height(14.dp))
-        }
-
-        if (settingsStore != null) {
-            val geminiKey by settingsStore.geminiApiKey.collectAsState()
-            var showApiKeyDialog by remember { mutableStateOf(false) }
-
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { showApiKeyDialog = true },
-                shape = RoundedCornerShape(22.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f)
-                )
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(18.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Rounded.AutoAwesome,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "ИИ-Помощник (Gemini API)",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(4.dp))
+                if (updateInfo?.isUpdateAvailable == true) {
+                    Button(
+                        onClick = {
+                            val url = updateInfo.apkDownloadUrl ?: updateInfo.releaseUrl
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                            context.startActivity(intent)
+                        },
+                        modifier = Modifier
+                            .padding(start = 12.dp)
+                            .height(40.dp),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
                         Text(
-                            text = if (geminiKey.isNotBlank()) "Ключ настроен • Онлайн-разбор тем" else "Локальный режим • Без ключа",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = if (geminiKey.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                            text = "Обновить",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Bold
                         )
                     }
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Rounded.ArrowForwardIos,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                } else {
+                    IconButton(onClick = onCheckUpdates) {
+                        Icon(
+                            imageVector = Icons.Rounded.Refresh,
+                            contentDescription = "Проверить",
+                            tint = MaterialTheme.colorScheme.outline
+                        )
+                    }
                 }
             }
-
-            if (showApiKeyDialog) {
-                var tempKey by remember { mutableStateOf(geminiKey) }
-                AlertDialog(
-                    onDismissRequest = { showApiKeyDialog = false },
-                    title = {
-                        Text("Ключ Gemini API", fontWeight = FontWeight.Bold)
-                    },
-                    text = {
-                        Column {
-                            Text(
-                                text = "Для персонального разбора тем, шпаргалок и вопросов укажите ключ Gemini. Если поле пустое, работает встроенный локальный анализатор.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Spacer(modifier = Modifier.height(12.dp))
-                            OutlinedTextField(
-                                value = tempKey,
-                                onValueChange = { tempKey = it },
-                                label = { Text("API Key") },
-                                placeholder = { Text("AIzaSy...") },
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(12.dp)
-                            )
-                        }
-                    },
-                    confirmButton = {
-                        TextButton(onClick = {
-                            settingsStore.setGeminiApiKey(tempKey)
-                            showApiKeyDialog = false
-                        }) {
-                            Text("Сохранить")
-                        }
-                    },
-                    dismissButton = {
-                        if (geminiKey.isNotBlank()) {
-                            TextButton(onClick = {
-                                settingsStore.setGeminiApiKey("")
-                                showApiKeyDialog = false
-                            }) {
-                                Text("Очистить", color = MaterialTheme.colorScheme.error)
-                            }
-                        } else {
-                            TextButton(onClick = { showApiKeyDialog = false }) {
-                                Text("Отмена")
-                            }
-                        }
-                    }
-                )
-            }
-
-            Spacer(modifier = Modifier.height(14.dp))
         }
 
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(22.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f)
-            )
-        ) {
-            Column(modifier = Modifier.padding(18.dp)) {
-                Text(
-                    text = "О системе",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "ГИС в сфере образования (ЭлЖур Крым)\nedu.rk.gov.ru",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = "Дизайн: Material 3 Expressive",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.SemiBold
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(20.dp))
+        Spacer(modifier = Modifier.height(24.dp))
 
         OutlinedButton(
             onClick = onLogout,

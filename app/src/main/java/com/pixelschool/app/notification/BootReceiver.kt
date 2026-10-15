@@ -14,6 +14,9 @@ class BootReceiver : BroadcastReceiver() {
             if (settingsStore.notificationsEnabled.value) {
                 MarksSyncWorker.schedule(context)
             }
+            if (settingsStore.homeworkReminderEnabled.value) {
+                HomeworkReminderWorker.schedule(context)
+            }
         }
     }
 }

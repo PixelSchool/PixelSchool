@@ -53,4 +53,22 @@ class SettingsStore(context: Context) {
         prefs.edit().putString("key_gemini_api_key", trimmed).apply()
         _geminiApiKey.value = trimmed
     }
+
+    private val _homeworkReminderEnabled =
+        MutableStateFlow(prefs.getBoolean("key_homework_reminder_enabled", false))
+    val homeworkReminderEnabled: StateFlow<Boolean> = _homeworkReminderEnabled.asStateFlow()
+
+    fun setHomeworkReminderEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean("key_homework_reminder_enabled", enabled).apply()
+        _homeworkReminderEnabled.value = enabled
+    }
+
+    private val _homeworkReminderTime =
+        MutableStateFlow(prefs.getString("key_homework_reminder_time", "19:00") ?: "19:00")
+    val homeworkReminderTime: StateFlow<String> = _homeworkReminderTime.asStateFlow()
+
+    fun setHomeworkReminderTime(time: String) {
+        prefs.edit().putString("key_homework_reminder_time", time).apply()
+        _homeworkReminderTime.value = time
+    }
 }

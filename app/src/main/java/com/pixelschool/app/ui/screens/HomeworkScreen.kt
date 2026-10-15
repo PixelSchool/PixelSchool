@@ -55,10 +55,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.layout.width
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.compose.material.icons.rounded.Share
+import com.pixelschool.app.data.local.AppThemePalette
 import com.pixelschool.app.data.model.DaySchedule
 import com.pixelschool.app.data.model.Homework
 import com.pixelschool.app.ui.components.HomeworkExpressiveCard
+import com.pixelschool.app.ui.components.ShareScheduleBottomSheet
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.temporal.TemporalAdjusters
@@ -154,9 +156,11 @@ fun HomeworkScreen(
     onChangeWeekOffset: (Int) -> Unit = {},
     onResetWeekOffset: () -> Unit = {},
     schedule: List<DaySchedule> = emptyList(),
+    palette: AppThemePalette = AppThemePalette.DYNAMIC,
     modifier: Modifier = Modifier
 ) {
     val coroutineScope = rememberCoroutineScope()
+    var showShareSheet by remember { mutableStateOf(false) }
     val monday = remember(weekOffset) {
         HomeworkDateUtils.getMondayForOffset(weekOffset)
     }
@@ -354,18 +358,35 @@ fun HomeworkScreen(
                 text = "$selectedDayFullName, ${selectedDayDate.dayOfMonth} ${HomeworkDateUtils.getMonthGenitive(selectedDayDate.monthValue)} • $completedCount из $totalCount",
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f)
             )
 
-            LinearProgressIndicator(
-                progress = { progress },
-                modifier = Modifier
-                    .width(64.dp)
-                    .height(4.dp)
-                    .clip(RoundedCornerShape(2.dp)),
-                color = MaterialTheme.colorScheme.primary,
-                trackColor = MaterialTheme.colorScheme.surfaceVariant
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                LinearProgressIndicator(
+                    progress = { progress },
+                    modifier = Modifier
+                        .width(52.dp)
+                        .height(4.dp)
+                        .clip(RoundedCornerShape(2.dp)),
+                    color = MaterialTheme.colorScheme.primary,
+                    trackColor = MaterialTheme.colorScheme.surfaceVariant
+                )
+                IconButton(
+                    onClick = { showShareSheet = true },
+                    modifier = Modifier.size(28.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Share,
+                        contentDescription = "Поделиться",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
         }
 
         Spacer(modifier = Modifier.height(8.dp))
@@ -475,5 +496,28 @@ fun HomeworkScreen(
                 }
             }
         }
+    }
+
+    if (showShareSheet) {
+        val targetDay = schedule.getOrNull(selectedDayIndex) ?: DaySchedule(
+            date = String.format(Locale.US, "%02d.%02d.%04d", selectedDayDate.dayOfMonth, selectedDayDate.monthValue, selectedDayDate.year),
+            dayOfWeek = selectedDayFullName,
+            lessons = dayHomeworkList.mapIndexed { idx, hw ->
+                com.pixelschool.app.data.model.Lesson(
+                    num = idx + 1,
+                    startTime = "",
+                    endTime = "",
+                    subject = hw.subject,
+                    homework = hw.text,
+                    attachments = hw.attachments
+                )
+            }
+        )
+        ShareScheduleBottomSheet(
+            day = targetDay,
+            homeworkList = homeworkList,
+            palette = palette,
+            onDismiss = { showShareSheet = false }
+        )
     }
 }
